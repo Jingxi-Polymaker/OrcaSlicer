@@ -390,7 +390,7 @@ void SelectMachinePopup::Popup(wxWindow *WXUNUSED(focus))
     if (wxGetApp().is_user_login()) {
         if (!get_print_info_thread) {
             get_print_info_thread = new boost::thread(Slic3r::create_thread([this, token = std::weak_ptr<int>(m_token)] {
-                NetworkAgent* agent = wxGetApp().getAgent();
+                INetworkAgent* agent = wxGetApp().getAgent();
                 unsigned int http_code;
                 std::string body;
                 int result = agent->get_user_print_info(&http_code, &body);

@@ -14,7 +14,7 @@ using namespace nlohmann;
 
 namespace Slic3r
 {
-    DeviceManager::DeviceManager(NetworkAgent* agent)
+    DeviceManager::DeviceManager(INetworkAgent* agent)
     {
         m_agent = agent;
         m_refresher = new DeviceManagerRefresher(this);
@@ -845,7 +845,7 @@ namespace Slic3r
     {
         if (!m_manager) { return; }
 
-        NetworkAgent* agent = m_manager->get_agent();
+        INetworkAgent* agent = m_manager->get_agent();
         if (!agent) { return; }
 
         // reset to active

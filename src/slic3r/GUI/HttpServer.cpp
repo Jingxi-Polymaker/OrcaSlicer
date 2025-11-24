@@ -2,7 +2,7 @@
 #include <boost/log/trivial.hpp>
 #include "GUI_App.hpp"
 #include "slic3r/Utils/Http.hpp"
-#include "slic3r/Utils/NetworkAgent.hpp"
+#include "slic3r/Utils/INetworkAgent.hpp"
 
 namespace Slic3r {
 namespace GUI {
@@ -188,7 +188,7 @@ std::shared_ptr<HttpServer::Response> HttpServer::bbl_auth_handle_request(const 
         std::string   refresh_token          = url_get_param(url, "refresh_token");
         std::string   expires_in_str         = url_get_param(url, "expires_in");
         std::string   refresh_expires_in_str = url_get_param(url, "refresh_expires_in");
-        NetworkAgent* agent                  = wxGetApp().getAgent();
+        INetworkAgent* agent                  = wxGetApp().getAgent();
 
         unsigned int http_code;
         std::string  http_body;

@@ -1686,7 +1686,7 @@ void CalibrationPresetPage::update_sync_button_status()
 
 void CalibrationPresetPage::update_show_status()
 {
-    NetworkAgent* agent = Slic3r::GUI::wxGetApp().getAgent();
+    INetworkAgent* agent = Slic3r::GUI::wxGetApp().getAgent();
     DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
     if (!agent) {return;}
     if (!dev) return;

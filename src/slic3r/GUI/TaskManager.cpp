@@ -149,7 +149,7 @@ void TaskManager::set_max_send_at_same_time(int count)
     TaskManager::MaxSendingAtSameTime = count;
 }
 
-TaskManager::TaskManager(NetworkAgent* agent)
+TaskManager::TaskManager(INetworkAgent* agent)
     :m_agent(agent)
 {
     ;

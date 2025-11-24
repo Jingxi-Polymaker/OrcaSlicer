@@ -584,7 +584,7 @@ void* NetworkAgent::get_network_function(const char* name)
     return function;
 }
 
-std::string NetworkAgent::get_version()
+std::string NetworkAgent::get_version_impl()
 {
     bool consistent = true;
     //check the debug consistent first
@@ -604,6 +604,12 @@ std::string NetworkAgent::get_version()
     }
     BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", get_version not supported,return 00.00.00.00!");
     return "00.00.00.00";
+}
+
+std::string NetworkAgent::get_library_version()
+{
+    // Static method - delegate to implementation
+    return get_version_impl();
 }
 
 int NetworkAgent::init_log()
@@ -1655,6 +1661,13 @@ int NetworkAgent::get_model_mall_rating_result(int job_id, std::string &rating_r
         if (ret) BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << boost::format(" error: network_agent=%1%, ret=%2%") % network_agent % ret;
     }
     return ret;
+}
+
+std::string NetworkAgent::get_version()
+{
+    // Instance method - delegate to shared implementation
+    // This allows calling via INetworkAgent interface even when library isn't loaded
+    return get_version_impl();
 }
 
 } //namespace

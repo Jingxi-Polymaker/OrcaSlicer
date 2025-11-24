@@ -43,7 +43,7 @@ ZUserLogin::ZUserLogin() : wxDialog((wxWindow *) (wxGetApp().mainframe), wxID_AN
 {
     SetBackgroundColour(*wxWHITE);
     // Url
-    NetworkAgent* agent = wxGetApp().getAgent();
+    INetworkAgent* agent = wxGetApp().getAgent();
     if (!agent) {
 
         SetBackgroundColour(*wxWHITE);
@@ -222,7 +222,7 @@ void ZUserLogin::OnDocumentLoaded(wxWebViewEvent &evt)
 {
     // Only notify if the document is the main frame, not a subframe
     wxString tmpUrl = evt.GetURL();
-    NetworkAgent* agent = wxGetApp().getAgent();
+    INetworkAgent* agent = wxGetApp().getAgent();
     std::string strHost = agent->get_bambulab_host();
 
     if ( tmpUrl.Contains(strHost) ) {
@@ -266,19 +266,40 @@ void ZUserLogin::OnFullScreenChanged(wxWebViewEvent &evt)
 void ZUserLogin::OnScriptMessage(wxWebViewEvent &evt)
 {
     wxString str_input = evt.GetString();
+    BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] OnScriptMessage received: " << str_input.ToStdString();
+
     try {
         json j = json::parse(into_u8(str_input));
 
+        BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Parsed JSON successfully";
+
         wxString strCmd = j["command"];
+        BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Command: " << strCmd.ToStdString();
 
         if (strCmd == "autotest_token")
         {
             m_AutotestToken = j["data"]["token"];
+            BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Stored autotest_token";
         }
         if (strCmd == "user_login") {
+            BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Processing user_login command";
+            BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] User data: " << j["data"].dump();
+
             j["data"]["autotest_token"] = m_AutotestToken;
-            wxGetApp().handle_script_message(j.dump());
-            Close();
+            std::string message_json = j.dump();
+
+            BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Calling handle_script_message with: " << message_json;
+
+            // End modal dialog first to unblock event loop before processing callbacks
+            BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Ending modal dialog";
+            EndModal(wxID_OK);
+
+            // Handle message after modal dialog ends to avoid deadlock
+            // Use wxTheApp->CallAfter to ensure it runs after modal loop exits
+            wxTheApp->CallAfter([message_json]() {
+                BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Processing login message after modal ended";
+                wxGetApp().handle_script_message(message_json);
+            });
         }
         else if (strCmd == "get_localhost_url") {
             BOOST_LOG_TRIVIAL(info) << "thirdparty_login: get_localhost_url";

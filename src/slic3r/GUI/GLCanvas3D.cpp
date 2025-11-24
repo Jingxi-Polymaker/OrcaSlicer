@@ -6796,7 +6796,7 @@ bool GLCanvas3D::_init_main_toolbar()
             wxGetApp().plater()->orient();
             //BBS do not show orient menu
             //_render_orient_menu(left, right, bottom, top);
-            NetworkAgent* agent = GUI::wxGetApp().getAgent();
+            INetworkAgent* agent = GUI::wxGetApp().getAgent();
             if (agent) agent->track_update_property("auto_orient", std::to_string(++auto_orient_count));
         }
     };

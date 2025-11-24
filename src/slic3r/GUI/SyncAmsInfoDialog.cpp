@@ -2030,10 +2030,10 @@ void SyncAmsInfoDialog::Enable_Auto_Refill(bool enable)
 
 void SyncAmsInfoDialog::update_user_machine_list()
 {
-    NetworkAgent *m_agent = wxGetApp().getAgent();
+    INetworkAgent *m_agent = wxGetApp().getAgent();
     if (m_agent && m_agent->is_user_login()) {
         boost::thread get_print_info_thread = Slic3r::create_thread([this, token = std::weak_ptr(m_token)] {
-            NetworkAgent *agent = wxGetApp().getAgent();
+            INetworkAgent *agent = wxGetApp().getAgent();
             unsigned int  http_code;
             std::string   body;
             int           result = agent->get_user_print_info(&http_code, &body);
@@ -2278,7 +2278,7 @@ void SyncAmsInfoDialog::update_show_status()
     if (get_status() == PrintDialogStatus::PrintStatusSendingCanceled)
         return;
 
-    NetworkAgent * agent = Slic3r::GUI::wxGetApp().getAgent();
+    INetworkAgent * agent = Slic3r::GUI::wxGetApp().getAgent();
     DeviceManager *dev   = Slic3r::GUI::wxGetApp().getDeviceManager();
     if (!agent) {
         return;
@@ -2571,7 +2571,7 @@ void SyncAmsInfoDialog::set_default(bool hide_some)
     m_print_info          = "";
     // rset status bar
 
-    NetworkAgent *agent = wxGetApp().getAgent();
+    INetworkAgent* agent = wxGetApp().getAgent();
     if (agent) {
         if (!hide_some) {
             if (agent->is_user_login()) {

@@ -336,7 +336,7 @@ void MonitorPanel::update_all()
     if (!m_initialized)
         return;
 
-    NetworkAgent* m_agent = wxGetApp().getAgent();
+    INetworkAgent* m_agent = wxGetApp().getAgent();
     Slic3r::DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
     if (!dev) return;
     obj = dev->get_selected_machine();
@@ -413,7 +413,7 @@ bool MonitorPanel::Show(bool show)
     wxGetApp().mainframe->SetMinSize(wxGetApp().plater()->GetMinSize());
 #endif
 
-    NetworkAgent* m_agent = wxGetApp().getAgent();
+    INetworkAgent* m_agent = wxGetApp().getAgent();
     DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
     if (show) {
         start_update();
@@ -448,7 +448,7 @@ void MonitorPanel::show_status(int status)
     if (!m_initialized) return;
     if (last_status == status)return;
     if ((last_status & (int)MonitorStatus::MONITOR_CONNECTING) != 0) {
-        NetworkAgent* agent = wxGetApp().getAgent();
+        INetworkAgent* agent = wxGetApp().getAgent();
         json j;
         j["dev_id"] = obj ? obj->get_dev_id() : "obj_nullptr";
         if ((status & (int)MonitorStatus::MONITOR_DISCONNECTED) != 0) {

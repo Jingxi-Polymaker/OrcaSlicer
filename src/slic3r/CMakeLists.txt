@@ -588,6 +588,10 @@ set(SLIC3R_GUI_SOURCES
     Utils/MKS.hpp
     Utils/NetworkAgent.cpp
     Utils/NetworkAgent.hpp
+    Utils/INetworkAgent.hpp
+    Utils/NetworkAgentFactory.hpp
+    Utils/OrcaNetwork.cpp
+    Utils/OrcaNetwork.hpp
     Utils/Obico.cpp
     Utils/Obico.hpp
     Utils/OctoPrint.cpp

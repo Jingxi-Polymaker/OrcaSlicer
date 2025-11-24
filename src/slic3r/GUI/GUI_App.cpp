@@ -117,6 +117,8 @@
 #include "ModelMall.hpp"
 #include "HintNotification.hpp"
 
+#include "slic3r/Utils/NetworkAgentFactory.hpp"
+
 //#ifdef WIN32
 //#include "BaseException.h"
 //#endif
@@ -992,7 +994,7 @@ void GUI_App::post_init()
 
             std::string http_url = get_http_url(app_config->get_country_code());
             std::string language = GUI::into_u8(current_language_code());
-            std::string network_ver = Slic3r::NetworkAgent::get_version();
+            std::string network_ver = Slic3r::NetworkAgent::get_library_version();
             bool        sys_preset  = app_config->get("sync_system_preset") == "true";
             this->preset_updater->sync(http_url, language, network_ver, sys_preset ? preset_bundle : nullptr);
 
@@ -1598,7 +1600,7 @@ int GUI_App::updating_bambu_networking()
 
 bool GUI_App::check_networking_version()
 {
-    std::string network_ver = Slic3r::NetworkAgent::get_version();
+    std::string network_ver = Slic3r::NetworkAgent::get_library_version();
     if (!network_ver.empty()) {
         BOOST_LOG_TRIVIAL(info) << "get_network_agent_version=" << network_ver;
     }
@@ -2992,7 +2994,9 @@ __retry:
         //std::string data_dir = wxStandardPaths::Get().GetUserDataDir().ToUTF8().data();
         std::string data_directory = data_dir();
 
-        m_agent = new Slic3r::NetworkAgent(data_directory);
+        // m_agent = new Slic3r::NetworkAgent(data_directory);
+        std::unique_ptr<Slic3r::INetworkAgent> agent_ptr = Slic3r::create_agent_from_config(data_directory, app_config);
+        m_agent = agent_ptr.release();
 
         if (!m_device_manager)
             m_device_manager = new Slic3r::DeviceManager(m_agent);

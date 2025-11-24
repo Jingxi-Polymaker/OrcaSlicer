@@ -134,7 +134,7 @@ void PrintJob::process(Ctl &ctl)
     std::string msg;
     wxString error_str;
     int curr_percent = 10;
-    NetworkAgent* m_agent = wxGetApp().getAgent();
+    INetworkAgent* m_agent = wxGetApp().getAgent();
     AppConfig* config = wxGetApp().app_config;
 
     if (this->connection_type == "lan") {

@@ -39,6 +39,7 @@
 #include "slic3r/GUI/MarkdownTip.hpp"
 #include "libslic3r/miniz_extension.hpp"
 #include "slic3r/GUI/GUI_Utils.hpp"
+#include "slic3r/Utils/NetworkAgent.hpp"
 
 namespace fs = boost::filesystem;
 using Slic3r::GUI::Config::Index;

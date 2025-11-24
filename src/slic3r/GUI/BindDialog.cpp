@@ -316,7 +316,7 @@ void PingCodeBindDialog::on_bind_printer(wxCommandEvent& event)
         ping_code += m_text_input_single_code[i]->GetTextCtrl()->GetValue().ToStdString();
     }
 
-    NetworkAgent* agent = wxGetApp().getAgent();
+    INetworkAgent* agent = wxGetApp().getAgent();
     if (agent && agent->is_user_login() && ping_code.length() == PING_CODE_LENGTH) {
         auto result = agent->ping_bind(ping_code.ToStdString());
 
@@ -870,7 +870,7 @@ PingCodeBindDialog::~PingCodeBindDialog() {
      if (m_machine_info->get_dev_id().empty()) return;
 
      // update ota version
-     NetworkAgent* agent = wxGetApp().getAgent();
+     INetworkAgent* agent = wxGetApp().getAgent();
      if (agent)
          agent->track_update_property("dev_ota_version", m_machine_info->get_ota_version());
 

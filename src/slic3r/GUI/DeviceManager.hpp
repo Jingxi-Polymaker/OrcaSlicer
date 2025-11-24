@@ -60,7 +60,7 @@ namespace GUI
 class DeviceErrorDialog; // Previous definitions
 }
 
-class NetworkAgent;
+class INetworkAgent;
 enum ManualPaCaliMethod {
     PA_LINE = 0,
     PA_PATTERN,
@@ -94,7 +94,7 @@ struct DevPrintTaskRatingInfo;
 class MachineObject
 {
 private:
-    NetworkAgent *    m_agent{nullptr};
+    INetworkAgent *    m_agent{nullptr};
     DeviceManager*    m_manager{ nullptr };
     std::shared_ptr<int> m_token = std::make_shared<int>(1);
 
@@ -130,7 +130,7 @@ private:
     DevConfig* m_config;
 
 public:
-    MachineObject(DeviceManager* manager, NetworkAgent* agent, std::string name, std::string id, std::string ip);
+    MachineObject(DeviceManager* manager, INetworkAgent* agent, std::string name, std::string id, std::string ip);
     ~MachineObject();
 
 public:

@@ -996,7 +996,7 @@ bool CalibUtils::calib_generic_auto_pa_cali(const std::vector<CalibInfo> &calib_
         }
         js["filament_id"]     = filament_ids;
         js["printer_type"]    = obj_->printer_type;
-        NetworkAgent *agent   = GUI::wxGetApp().getAgent();
+        INetworkAgent* agent   = GUI::wxGetApp().getAgent();
         if (agent)
             agent->track_event("cali", js.dump());
     } catch (...) {}

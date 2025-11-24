@@ -2,7 +2,7 @@
 #include "DeviceManager.hpp"
 #include "libslic3r/Time.hpp"
 #include "libslic3r/Thread.hpp"
-#include "slic3r/Utils/NetworkAgent.hpp"
+#include "slic3r/Utils/INetworkAgent.hpp"
 #include "GuiColor.hpp"
 
 #include "GUI_App.hpp"
@@ -474,7 +474,7 @@ void MachineObject::reload_printer_settings()
     parse_json("cloud", "{}");
 }
 
-MachineObject::MachineObject(DeviceManager* manager, NetworkAgent* agent, std::string name, std::string id, std::string ip)
+MachineObject::MachineObject(DeviceManager* manager, INetworkAgent* agent, std::string name, std::string id, std::string ip)
     :dev_name(name),
     dev_id(id),
     dev_ip(ip),
@@ -2366,7 +2366,7 @@ bool MachineObject::is_connected()
     }
 
     if (!is_lan_mode_printer()) {
-        NetworkAgent* m_agent = Slic3r::GUI::wxGetApp().getAgent();
+        INetworkAgent* m_agent = Slic3r::GUI::wxGetApp().getAgent();
         if (m_agent) {
             return m_agent->is_server_connected();
         }
@@ -2715,7 +2715,7 @@ int MachineObject::parse_json(std::string tunnel, std::string payload, bool key_
 
                         store_version_info(ver_info);
                         if (ver_info.name == "ota") {
-                            NetworkAgent* agent = GUI::wxGetApp().getAgent();
+                            INetworkAgent* agent = GUI::wxGetApp().getAgent();
                             if (agent) {
                                 std::string dev_ota_str = "dev_ota_ver:" + this->get_dev_id();
                                 agent->track_update_property(dev_ota_str, ver_info.sw_ver);

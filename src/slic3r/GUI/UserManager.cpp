@@ -1,7 +1,7 @@
 #include "libslic3r/libslic3r.h"
 #include "UserManager.hpp"
 #include "DeviceManager.hpp"
-#include "NetworkAgent.hpp"
+#include "INetworkAgent.hpp"
 #include "GUI.hpp"
 #include "GUI_App.hpp"
 #include "MsgDialog.hpp"
@@ -11,7 +11,7 @@
 
 namespace Slic3r {
 
-UserManager::UserManager(NetworkAgent* agent)
+UserManager::UserManager(INetworkAgent* agent)
 {
     m_agent = agent;
 }
@@ -20,7 +20,7 @@ UserManager::~UserManager()
 {
 }
 
-void UserManager::set_agent(NetworkAgent* agent)
+void UserManager::set_agent(INetworkAgent* agent)
 {
     m_agent = agent;
 }

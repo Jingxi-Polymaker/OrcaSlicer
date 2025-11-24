@@ -467,7 +467,7 @@ void PartSkipDialog::fetchUrl(boost::weak_ptr<PrinterFileSystem> wfs)
     std::string dev_id  = obj->get_dev_id();
     // int         remote_proto = obj->get_file_remote();
 
-    NetworkAgent *agent         = wxGetApp().getAgent();
+    INetworkAgent* agent         = wxGetApp().getAgent();
     std::string   agent_version = agent ? agent->get_version() : "";
 
     auto url_state = m_url_state;

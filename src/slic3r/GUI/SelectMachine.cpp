@@ -2573,7 +2573,7 @@ void SelectMachineDialog::on_send_print()
      });
 
     // update ota version
-    NetworkAgent* agent = wxGetApp().getAgent();
+    INetworkAgent* agent = wxGetApp().getAgent();
     if (agent) {
         std::string dev_ota_str = "dev_ota_ver:" + obj_->get_dev_id();
         agent->track_update_property(dev_ota_str, obj_->get_ota_version());
@@ -2590,10 +2590,10 @@ void SelectMachineDialog::clear_ip_address_config(wxCommandEvent& e)
 
 void SelectMachineDialog::update_user_machine_list()
 {
-    NetworkAgent* m_agent = wxGetApp().getAgent();
+    INetworkAgent* m_agent = wxGetApp().getAgent();
     if (m_agent && m_agent->is_user_login()) {
         boost::thread get_print_info_thread = Slic3r::create_thread([this, token = std::weak_ptr<int>(m_token)] {
-            NetworkAgent* agent = wxGetApp().getAgent();
+            INetworkAgent* agent = wxGetApp().getAgent();
             unsigned int http_code;
             std::string body;
             int result = agent->get_user_print_info(&http_code, &body);
@@ -3187,7 +3187,7 @@ void SelectMachineDialog::update_show_status(MachineObject* obj_)
     m_pre_print_checker.clear();
 
     /*agent check and printer valid check*/
-    NetworkAgent* agent = Slic3r::GUI::wxGetApp().getAgent();
+    INetworkAgent* agent = Slic3r::GUI::wxGetApp().getAgent();
     if (!agent) {
         show_status(PrintDialogStatus::PrintStatusNoUserLogin);
         update_ams_check(nullptr);
@@ -3745,7 +3745,7 @@ void SelectMachineDialog::set_default()
     // rset status bar
     m_status_bar->reset();
 
-    NetworkAgent* agent = wxGetApp().getAgent();
+    INetworkAgent* agent = wxGetApp().getAgent();
     if (agent) {
         if (agent->is_user_login()) {
             show_status(PrintDialogStatus::PrintStatusInit);

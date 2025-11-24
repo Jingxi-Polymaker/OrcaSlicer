@@ -460,7 +460,7 @@ void WebViewPanel::SendDesignStaffpick(bool on)
     // }
 }
 
-void WebViewPanel::OpenModelDetail(std::string id, NetworkAgent *agent)
+void WebViewPanel::OpenModelDetail(std::string id, INetworkAgent* agent)
 {
     std::string url;
     if ((agent ? agent->get_model_mall_detail_url(&url, id) : get_model_mall_detail_url(&url, id)) == 0) 
