@@ -5,8 +5,6 @@
 #include "libslic3r/ProjectTask.hpp"
 #include "INetworkAgent.hpp"
 
-using namespace BBL;
-
 namespace Slic3r {
 typedef bool (*func_check_debug_consistent)(bool is_debug);
 typedef std::string (*func_get_version)(void);
@@ -136,18 +134,18 @@ public:
     int set_cert_file(std::string folder, std::string filename) override;
     int set_country_code(std::string country_code) override;
     int start() override;
-    int set_on_ssdp_msg_fn(BBL::OnMsgArrivedFn fn) override;
-    int set_on_user_login_fn(BBL::OnUserLoginFn fn) override;
-    int set_on_printer_connected_fn(BBL::OnPrinterConnectedFn fn) override;
-    int set_on_server_connected_fn(BBL::OnServerConnectedFn fn) override;
-    int set_on_http_error_fn(BBL::OnHttpErrorFn fn) override;
-    int set_get_country_code_fn(BBL::GetCountryCodeFn fn) override;
-    int set_on_subscribe_failure_fn(BBL::GetSubscribeFailureFn fn) override;
-    int set_on_message_fn(BBL::OnMessageFn fn) override;
-    int set_on_user_message_fn(BBL::OnMessageFn fn) override;
-    int set_on_local_connect_fn(BBL::OnLocalConnectedFn fn) override;
-    int set_on_local_message_fn(BBL::OnMessageFn fn) override;
-    int set_queue_on_main_fn(BBL::QueueOnMainFn fn) override;
+    int set_on_ssdp_msg_fn(OnMsgArrivedFn fn) override;
+    int set_on_user_login_fn(OnUserLoginFn fn) override;
+    int set_on_printer_connected_fn(OnPrinterConnectedFn fn) override;
+    int set_on_server_connected_fn(OnServerConnectedFn fn) override;
+    int set_on_http_error_fn(OnHttpErrorFn fn) override;
+    int set_get_country_code_fn(GetCountryCodeFn fn) override;
+    int set_on_subscribe_failure_fn(GetSubscribeFailureFn fn) override;
+    int set_on_message_fn(OnMessageFn fn) override;
+    int set_on_user_message_fn(OnMessageFn fn) override;
+    int set_on_local_connect_fn(OnLocalConnectedFn fn) override;
+    int set_on_local_message_fn(OnMessageFn fn) override;
+    int set_queue_on_main_fn(QueueOnMainFn fn) override;
     int connect_server() override;
     bool is_server_connected() override;
     int refresh_connection() override;
@@ -174,23 +172,23 @@ public:
     std::string build_logout_cmd() override;
     std::string build_login_info() override;
     int ping_bind(std::string ping_code) override;
-    int bind_detect(std::string dev_ip, std::string sec_link, BBL::detectResult& detect) override;
-    int set_server_callback(BBL::OnServerErrFn fn) override;
-    int bind(std::string dev_ip, std::string dev_id, std::string sec_link, std::string timezone, bool improved, BBL::OnUpdateStatusFn update_fn) override;
+    int bind_detect(std::string dev_ip, std::string sec_link, detectResult& detect) override;
+    int set_server_callback(OnServerErrFn fn) override;
+    int bind(std::string dev_ip, std::string dev_id, std::string sec_link, std::string timezone, bool improved, OnUpdateStatusFn update_fn) override;
     int unbind(std::string dev_id) override;
     std::string get_bambulab_host() override;
     std::string get_user_selected_machine() override;
     int set_user_selected_machine(std::string dev_id) override;
-    int start_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn) override;
-    int start_local_print_with_record(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn) override;
-    int start_send_gcode_to_sdcard(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn) override;
-    int start_local_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn) override;
-    int start_sdcard_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn) override;
+    int start_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) override;
+    int start_local_print_with_record(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) override;
+    int start_send_gcode_to_sdcard(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) override;
+    int start_local_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn) override;
+    int start_sdcard_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn) override;
     int get_user_presets(std::map<std::string, std::map<std::string, std::string>>* user_presets) override;
     std::string request_setting_id(std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code) override;
     int put_setting(std::string setting_id, std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code) override;
-    int get_setting_list(std::string bundle_version, BBL::ProgressFn pro_fn = nullptr, BBL::WasCancelledFn cancel_fn = nullptr) override;
-    int get_setting_list2(std::string bundle_version, BBL::CheckFn chk_fn, BBL::ProgressFn pro_fn = nullptr, BBL::WasCancelledFn cancel_fn = nullptr) override;
+    int get_setting_list(std::string bundle_version, ProgressFn pro_fn = nullptr, WasCancelledFn cancel_fn = nullptr) override;
+    int get_setting_list2(std::string bundle_version, CheckFn chk_fn, ProgressFn pro_fn = nullptr, WasCancelledFn cancel_fn = nullptr) override;
     int delete_setting(std::string setting_id) override;
     std::string get_studio_info_url() override;
     int set_extra_http_header(std::map<std::string, std::string> extra_headers) override;
@@ -208,7 +206,7 @@ public:
     int modify_printer_name(std::string dev_id, std::string dev_name) override;
     int get_camera_url(std::string dev_id, std::function<void(std::string)> callback) override;
     int get_design_staffpick(int offset, int limit, std::function<void(std::string)> callback) override;
-    int start_publish(BBL::PublishParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, std::string* out) override;
+    int start_publish(PublishParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, std::string* out) override;
     int get_model_publish_url(std::string* url) override;
     int get_subtask(BBLModelTask* task, OnGetSubTaskFn getsub_fn) override;
     int get_model_mall_home_url(std::string* url) override;

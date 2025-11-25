@@ -80,84 +80,84 @@ int OrcaNetwork::start()
 // Callback Registration
 // ============================================================================
 
-int OrcaNetwork::set_on_ssdp_msg_fn(BBL::OnMsgArrivedFn fn)
+int OrcaNetwork::set_on_ssdp_msg_fn(OnMsgArrivedFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     on_ssdp_msg_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_on_user_login_fn(BBL::OnUserLoginFn fn)
+int OrcaNetwork::set_on_user_login_fn(OnUserLoginFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     on_user_login_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_on_printer_connected_fn(BBL::OnPrinterConnectedFn fn)
+int OrcaNetwork::set_on_printer_connected_fn(OnPrinterConnectedFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     on_printer_connected_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_on_server_connected_fn(BBL::OnServerConnectedFn fn)
+int OrcaNetwork::set_on_server_connected_fn(OnServerConnectedFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     on_server_connected_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_on_http_error_fn(BBL::OnHttpErrorFn fn)
+int OrcaNetwork::set_on_http_error_fn(OnHttpErrorFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     on_http_error_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_get_country_code_fn(BBL::GetCountryCodeFn fn)
+int OrcaNetwork::set_get_country_code_fn(GetCountryCodeFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     get_country_code_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_on_subscribe_failure_fn(BBL::GetSubscribeFailureFn fn)
+int OrcaNetwork::set_on_subscribe_failure_fn(GetSubscribeFailureFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     on_subscribe_failure_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_on_message_fn(BBL::OnMessageFn fn)
+int OrcaNetwork::set_on_message_fn(OnMessageFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     on_message_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_on_user_message_fn(BBL::OnMessageFn fn)
+int OrcaNetwork::set_on_user_message_fn(OnMessageFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     on_user_message_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_on_local_connect_fn(BBL::OnLocalConnectedFn fn)
+int OrcaNetwork::set_on_local_connect_fn(OnLocalConnectedFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     on_local_connect_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_on_local_message_fn(BBL::OnMessageFn fn)
+int OrcaNetwork::set_on_local_message_fn(OnMessageFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     on_local_message_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_queue_on_main_fn(BBL::QueueOnMainFn fn)
+int OrcaNetwork::set_queue_on_main_fn(QueueOnMainFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     queue_on_main_fn = fn;
@@ -625,14 +625,14 @@ int OrcaNetwork::put_setting(std::string setting_id, std::string name, std::map<
     }
 }
 
-int OrcaNetwork::get_setting_list(std::string bundle_version, BBL::ProgressFn pro_fn, BBL::WasCancelledFn cancel_fn)
+int OrcaNetwork::get_setting_list(std::string bundle_version, ProgressFn pro_fn, WasCancelledFn cancel_fn)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: get_setting_list - bundle_version=" << bundle_version;
     // Simple synchronous version
     return get_setting_list2(bundle_version, nullptr, pro_fn, cancel_fn);
 }
 
-int OrcaNetwork::get_setting_list2(std::string bundle_version, BBL::CheckFn chk_fn, BBL::ProgressFn pro_fn, BBL::WasCancelledFn cancel_fn)
+int OrcaNetwork::get_setting_list2(std::string bundle_version, CheckFn chk_fn, ProgressFn pro_fn, WasCancelledFn cancel_fn)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: get_setting_list2 - bundle_version=" << bundle_version;
 
@@ -1008,8 +1008,8 @@ int OrcaNetwork::http_delete(const std::string& path, std::string* response_body
 
 void OrcaNetwork::invoke_user_login_callback(int online_login, bool login)
 {
-    BBL::OnUserLoginFn callback;
-    BBL::QueueOnMainFn queue_fn;
+OnUserLoginFn callback;
+QueueOnMainFn queue_fn;
 
     {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);
@@ -1030,8 +1030,8 @@ void OrcaNetwork::invoke_user_login_callback(int online_login, bool login)
 
 void OrcaNetwork::invoke_server_connected_callback(int return_code, int reason_code)
 {
-    BBL::OnServerConnectedFn callback;
-    BBL::QueueOnMainFn queue_fn;
+OnServerConnectedFn callback;
+QueueOnMainFn queue_fn;
 
     {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);
@@ -1052,8 +1052,8 @@ void OrcaNetwork::invoke_server_connected_callback(int return_code, int reason_c
 
 void OrcaNetwork::invoke_http_error_callback(unsigned http_code, const std::string& http_body)
 {
-    BBL::OnHttpErrorFn callback;
-    BBL::QueueOnMainFn queue_fn;
+OnHttpErrorFn callback;
+QueueOnMainFn queue_fn;
 
     {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);
@@ -1123,20 +1123,20 @@ int OrcaNetwork::ping_bind(std::string ping_code)
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::bind_detect(std::string dev_ip, std::string sec_link, BBL::detectResult& detect)
+int OrcaNetwork::bind_detect(std::string dev_ip, std::string sec_link, detectResult& detect)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: bind_detect (stub) - dev_ip=" << dev_ip;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::set_server_callback(BBL::OnServerErrFn fn)
+int OrcaNetwork::set_server_callback(OnServerErrFn fn)
 {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     on_server_err_fn = fn;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::bind(std::string dev_ip, std::string dev_id, std::string sec_link, std::string timezone, bool improved, BBL::OnUpdateStatusFn update_fn)
+int OrcaNetwork::bind(std::string dev_ip, std::string dev_id, std::string sec_link, std::string timezone, bool improved, OnUpdateStatusFn update_fn)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: bind (stub) - dev_id=" << dev_id;
     return BAMBU_NETWORK_SUCCESS;
@@ -1167,31 +1167,31 @@ int OrcaNetwork::set_user_selected_machine(std::string dev_id)
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::start_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn)
+int OrcaNetwork::start_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: start_print (stub) - dev_id=" << params.dev_id;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::start_local_print_with_record(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn)
+int OrcaNetwork::start_local_print_with_record(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: start_local_print_with_record (stub) - dev_id=" << params.dev_id;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::start_send_gcode_to_sdcard(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn)
+int OrcaNetwork::start_send_gcode_to_sdcard(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: start_send_gcode_to_sdcard (stub) - dev_id=" << params.dev_id;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::start_local_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn)
+int OrcaNetwork::start_local_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: start_local_print (stub) - dev_id=" << params.dev_id;
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::start_sdcard_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn)
+int OrcaNetwork::start_sdcard_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: start_sdcard_print (stub) - dev_id=" << params.dev_id;
     return BAMBU_NETWORK_SUCCESS;
@@ -1221,7 +1221,7 @@ int OrcaNetwork::get_user_print_info(unsigned int* http_code, std::string* http_
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::get_user_tasks(BBL::TaskQueryParams params, std::string* http_body)
+int OrcaNetwork::get_user_tasks(TaskQueryParams params, std::string* http_body)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: get_user_tasks (stub)";
     if (http_body) *http_body = "[]";
@@ -1305,7 +1305,7 @@ int OrcaNetwork::get_design_staffpick(int offset, int limit, std::function<void(
     return BAMBU_NETWORK_SUCCESS;
 }
 
-int OrcaNetwork::start_publish(BBL::PublishParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, std::string* out)
+int OrcaNetwork::start_publish(PublishParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, std::string* out)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: start_publish (stub)";
     if (out) *out = "";

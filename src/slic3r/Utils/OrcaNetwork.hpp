@@ -41,18 +41,18 @@ public:
     int start() override;
 
     // Callback registration (INetworkAgent interface)
-    int set_on_ssdp_msg_fn(BBL::OnMsgArrivedFn fn) override;
-    int set_on_user_login_fn(BBL::OnUserLoginFn fn) override;
-    int set_on_printer_connected_fn(BBL::OnPrinterConnectedFn fn) override;
-    int set_on_server_connected_fn(BBL::OnServerConnectedFn fn) override;
-    int set_on_http_error_fn(BBL::OnHttpErrorFn fn) override;
-    int set_get_country_code_fn(BBL::GetCountryCodeFn fn) override;
-    int set_on_subscribe_failure_fn(BBL::GetSubscribeFailureFn fn) override;
-    int set_on_message_fn(BBL::OnMessageFn fn) override;
-    int set_on_user_message_fn(BBL::OnMessageFn fn) override;
-    int set_on_local_connect_fn(BBL::OnLocalConnectedFn fn) override;
-    int set_on_local_message_fn(BBL::OnMessageFn fn) override;
-    int set_queue_on_main_fn(BBL::QueueOnMainFn fn) override;
+    int set_on_ssdp_msg_fn(OnMsgArrivedFn fn) override;
+    int set_on_user_login_fn(OnUserLoginFn fn) override;
+    int set_on_printer_connected_fn(OnPrinterConnectedFn fn) override;
+    int set_on_server_connected_fn(OnServerConnectedFn fn) override;
+    int set_on_http_error_fn(OnHttpErrorFn fn) override;
+    int set_get_country_code_fn(GetCountryCodeFn fn) override;
+    int set_on_subscribe_failure_fn(GetSubscribeFailureFn fn) override;
+    int set_on_message_fn(OnMessageFn fn) override;
+    int set_on_user_message_fn(OnMessageFn fn) override;
+    int set_on_local_connect_fn(OnLocalConnectedFn fn) override;
+    int set_on_local_message_fn(OnMessageFn fn) override;
+    int set_queue_on_main_fn(QueueOnMainFn fn) override;
 
     // Server connectivity (INetworkAgent interface)
     int connect_server() override;
@@ -84,8 +84,8 @@ public:
     int get_user_presets(std::map<std::string, std::map<std::string, std::string>>* user_presets) override;
     std::string request_setting_id(std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code) override;
     int put_setting(std::string setting_id, std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code) override;
-    int get_setting_list(std::string bundle_version, BBL::ProgressFn pro_fn = nullptr, BBL::WasCancelledFn cancel_fn = nullptr) override;
-    int get_setting_list2(std::string bundle_version, BBL::CheckFn chk_fn, BBL::ProgressFn pro_fn = nullptr, BBL::WasCancelledFn cancel_fn = nullptr) override;
+    int get_setting_list(std::string bundle_version, ProgressFn pro_fn = nullptr, WasCancelledFn cancel_fn = nullptr) override;
+    int get_setting_list2(std::string bundle_version, CheckFn chk_fn, ProgressFn pro_fn = nullptr, WasCancelledFn cancel_fn = nullptr) override;
     int delete_setting(std::string setting_id) override;
 
     // Extra features (INetworkAgent interface)
@@ -101,26 +101,26 @@ public:
     void install_device_cert(std::string dev_id, bool lan_only) override;
     bool start_discovery(bool start, bool sending) override;
     int ping_bind(std::string ping_code) override;
-    int bind_detect(std::string dev_ip, std::string sec_link, BBL::detectResult& detect) override;
-    int set_server_callback(BBL::OnServerErrFn fn) override;
-    int bind(std::string dev_ip, std::string dev_id, std::string sec_link, std::string timezone, bool improved, BBL::OnUpdateStatusFn update_fn) override;
+    int bind_detect(std::string dev_ip, std::string sec_link, detectResult& detect) override;
+    int set_server_callback(OnServerErrFn fn) override;
+    int bind(std::string dev_ip, std::string dev_id, std::string sec_link, std::string timezone, bool improved, OnUpdateStatusFn update_fn) override;
     int unbind(std::string dev_id) override;
     std::string get_bambulab_host() override;
     std::string get_user_selected_machine() override;
     int set_user_selected_machine(std::string dev_id) override;
 
     // Print job operations - all stubs (INetworkAgent interface)
-    int start_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn) override;
-    int start_local_print_with_record(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn) override;
-    int start_send_gcode_to_sdcard(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn) override;
-    int start_local_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn) override;
-    int start_sdcard_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn) override;
+    int start_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) override;
+    int start_local_print_with_record(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) override;
+    int start_send_gcode_to_sdcard(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) override;
+    int start_local_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn) override;
+    int start_sdcard_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn) override;
 
     // Cloud services - all stubs (INetworkAgent interface)
     int get_my_message(int type, int after, int limit, unsigned int* http_code, std::string* http_body) override;
     int check_user_task_report(int* task_id, bool* printable) override;
     int get_user_print_info(unsigned int* http_code, std::string* http_body) override;
-    int get_user_tasks(BBL::TaskQueryParams params, std::string* http_body) override;
+    int get_user_tasks(TaskQueryParams params, std::string* http_body) override;
     int get_printer_firmware(std::string dev_id, unsigned* http_code, std::string* http_body) override;
     int get_task_plate_index(std::string task_id, int* plate_index) override;
     int get_user_info(int* identifier) override;
@@ -133,7 +133,7 @@ public:
     // Model mall & publishing - all stubs (INetworkAgent interface)
     int get_camera_url(std::string dev_id, std::function<void(std::string)> callback) override;
     int get_design_staffpick(int offset, int limit, std::function<void(std::string)> callback) override;
-    int start_publish(BBL::PublishParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, std::string* out) override;
+    int start_publish(PublishParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, std::string* out) override;
     int get_model_publish_url(std::string* url) override;
     int get_subtask(BBLModelTask* task, OnGetSubTaskFn getsub_fn) override;
     int get_model_mall_home_url(std::string* url) override;
@@ -204,19 +204,19 @@ private:
     std::string selected_machine;
 
     // Callbacks
-    BBL::OnMsgArrivedFn on_ssdp_msg_fn;
-    BBL::OnUserLoginFn on_user_login_fn;
-    BBL::OnPrinterConnectedFn on_printer_connected_fn;
-    BBL::OnServerConnectedFn on_server_connected_fn;
-    BBL::OnHttpErrorFn on_http_error_fn;
-    BBL::GetCountryCodeFn get_country_code_fn;
-    BBL::GetSubscribeFailureFn on_subscribe_failure_fn;
-    BBL::OnMessageFn on_message_fn;
-    BBL::OnMessageFn on_user_message_fn;
-    BBL::OnLocalConnectedFn on_local_connect_fn;
-    BBL::OnMessageFn on_local_message_fn;
-    BBL::QueueOnMainFn queue_on_main_fn;
-    BBL::OnServerErrFn on_server_err_fn;
+OnMsgArrivedFn on_ssdp_msg_fn;
+OnUserLoginFn on_user_login_fn;
+OnPrinterConnectedFn on_printer_connected_fn;
+OnServerConnectedFn on_server_connected_fn;
+OnHttpErrorFn on_http_error_fn;
+GetCountryCodeFn get_country_code_fn;
+GetSubscribeFailureFn on_subscribe_failure_fn;
+OnMessageFn on_message_fn;
+OnMessageFn on_user_message_fn;
+OnLocalConnectedFn on_local_connect_fn;
+OnMessageFn on_local_message_fn;
+QueueOnMainFn queue_on_main_fn;
+OnServerErrFn on_server_err_fn;
 
     // Thread safety
     std::recursive_mutex state_mutex;

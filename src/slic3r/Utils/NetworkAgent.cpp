@@ -10,10 +10,6 @@
 #include "libslic3r/Utils.hpp"
 #include "NetworkAgent.hpp"
 
-
-
-using namespace BBL;
-
 namespace Slic3r {
 
 #define BAMBU_SOURCE_LIBRARY "BambuSource"

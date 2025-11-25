@@ -8,9 +8,6 @@
 #include <vector>
 #include <functional>
 
-
-using namespace BBL;
-
 namespace Slic3r {
 
 /**
@@ -100,77 +97,77 @@ public:
      * giving higher level components a chance to display "available" devices
      * even before authentication succeeds.
      */
-    virtual int set_on_ssdp_msg_fn(BBL::OnMsgArrivedFn fn) = 0;
+    virtual int set_on_ssdp_msg_fn(OnMsgArrivedFn fn) = 0;
     /**
      * Register the login status callback.
      * Called after `change_user()` finishes or whenever the session expires;
      * `fn` receives the login type (online/offline) and the boolean outcome.
      * Invoke prior to initiating any login flow so UI state stays in sync.
      */
-    virtual int set_on_user_login_fn(BBL::OnUserLoginFn fn) = 0;
+    virtual int set_on_user_login_fn(OnUserLoginFn fn) = 0;
     /**
      * Register the hook that reports printer MQTT connections.
      * The callback receives the raw MQTT topic so the caller can subscribe to
      * additional device-specific channels.
      */
-    virtual int set_on_printer_connected_fn(BBL::OnPrinterConnectedFn fn) = 0;
+    virtual int set_on_printer_connected_fn(OnPrinterConnectedFn fn) = 0;
     /**
      * Register the hook that signals when the agent connects to or disconnects
      * from the cloud backend. This is typically used to toggle the UI "online"
      * indicator and re-run auto-sync logic when the link drops.
      */
-    virtual int set_on_server_connected_fn(BBL::OnServerConnectedFn fn) = 0;
+    virtual int set_on_server_connected_fn(OnServerConnectedFn fn) = 0;
     /**
      * Register a callback that fires when an HTTP request returns >= 400.
      * Implementations call this helper before surfacing failures back to the
      * GUI so that telemetry dialogs or toast notifications can reuse the exact
      * HTTP status code and body.
      */
-    virtual int set_on_http_error_fn(BBL::OnHttpErrorFn fn) = 0;
+    virtual int set_on_http_error_fn(OnHttpErrorFn fn) = 0;
     /**
      * Provide the getter used whenever the agent needs the current country
      * code but the GUI is the authoritative source (for example, after the
      * user toggles the region inside preferences). If this callback is set it
      * takes precedence over the value stored via `set_country_code`.
      */
-    virtual int set_get_country_code_fn(BBL::GetCountryCodeFn fn) = 0;
+    virtual int set_get_country_code_fn(GetCountryCodeFn fn) = 0;
     /**
      * Register a callback that is invoked when subscribing to a remote module
      * (MQTT topic) fails. Passing this allows the GUI to surface detailed
      * reasons and optionally retry with updated credentials.
      */
-    virtual int set_on_subscribe_failure_fn(BBL::GetSubscribeFailureFn fn) = 0;
+    virtual int set_on_subscribe_failure_fn(GetSubscribeFailureFn fn) = 0;
     /**
      * Register the handler for cloud device messages (MQTT / WebSocket).
      * The provided function is called with the `dev_id` and JSON payload
      * whenever the agent receives a message from Bambu cloud infrastructure.
      */
-    virtual int set_on_message_fn(BBL::OnMessageFn fn) = 0;
+    virtual int set_on_message_fn(OnMessageFn fn) = 0;
     /**
      * Register the handler for user-scoped messaging channels.
      * This is usually bound to notifications coming from `user/{id}` topics
      * instead of specific device topics.
      */
-    virtual int set_on_user_message_fn(BBL::OnMessageFn fn) = 0;
+    virtual int set_on_user_message_fn(OnMessageFn fn) = 0;
     /**
      * Register callback that notifies when a LAN printer accepted or rejected
      * a direct socket/MQTT connection attempt. The hook receives status codes
      * paired with device identifiers so the GUI can update each tile.
      */
-    virtual int set_on_local_connect_fn(BBL::OnLocalConnectedFn fn) = 0;
+    virtual int set_on_local_connect_fn(OnLocalConnectedFn fn) = 0;
     /**
      * Register handler for raw LAN MQTT/JSON payloads.
      * Unlike `set_on_message_fn`, this path bypasses the cloud relays and
      * surfaces packets received over the direct local socket.
      */
-    virtual int set_on_local_message_fn(BBL::OnMessageFn fn) = 0;
+    virtual int set_on_local_message_fn(OnMessageFn fn) = 0;
     /**
      * Provide the helper that schedules callbacks on the GUI / main thread.
      * All other callbacks registered above are invoked via this trampoline to
      * avoid touching UI state from worker threads. If no queue is set, the
      * agent calls listeners immediately on the worker thread.
      */
-    virtual int set_queue_on_main_fn(BBL::QueueOnMainFn fn) = 0;
+    virtual int set_queue_on_main_fn(QueueOnMainFn fn) = 0;
 
     // ========================================================================
     // Server Connectivity
@@ -327,7 +324,7 @@ public:
      * version (the slicer build). Progress is reported through the optional
      * `ProgressFn`, while `WasCancelledFn` lets the caller abort mid-sync.
      */
-    virtual int get_setting_list(std::string bundle_version, BBL::ProgressFn pro_fn = nullptr, BBL::WasCancelledFn cancel_fn = nullptr) = 0;
+    virtual int get_setting_list(std::string bundle_version, ProgressFn pro_fn = nullptr, WasCancelledFn cancel_fn = nullptr) = 0;
     /**
      * Enhanced preset synchronization that provides per-item validation via the
      * `CheckFn` callback while still supporting progress and cancellation.
@@ -336,7 +333,7 @@ public:
      * Use this variant when the caller needs to filter presets based on sync state
      * or other criteria before they are committed locally.
      */
-    virtual int get_setting_list2(std::string bundle_version, BBL::CheckFn chk_fn, BBL::ProgressFn pro_fn = nullptr, BBL::WasCancelledFn cancel_fn = nullptr) = 0;
+    virtual int get_setting_list2(std::string bundle_version, CheckFn chk_fn, ProgressFn pro_fn = nullptr, WasCancelledFn cancel_fn = nullptr) = 0;
     /**
      * Delete the remote preset identified by `setting_id`.
      * Successful removal should be reflected locally to keep caches in sync.
@@ -429,13 +426,13 @@ public:
      * @param sec_link Secondary link token displayed on the printer.
      * @param detect   Output structure describing the binding capabilities.
      */
-    virtual int bind_detect(std::string dev_ip, std::string sec_link, BBL::detectResult& detect) = 0;
+    virtual int bind_detect(std::string dev_ip, std::string sec_link, detectResult& detect) = 0;
     /**
      * Register a callback invoked whenever the backend reports fatal HTTP
      * errors (server side). Unlike `set_on_http_error_fn`, this exposes the
      * failing URL and the status for logging/telemetry.
      */
-    virtual int set_server_callback(BBL::OnServerErrFn fn) = 0;
+    virtual int set_server_callback(OnServerErrFn fn) = 0;
     /**
      * Execute the multi-stage printer binding workflow:
      * 1. Connect to the printer via LAN.
@@ -444,7 +441,7 @@ public:
      *
      * @param improved Indicates whether to use the improved binding protocol.
      */
-    virtual int bind(std::string dev_ip, std::string dev_id, std::string sec_link, std::string timezone, bool improved, BBL::OnUpdateStatusFn update_fn) = 0;
+    virtual int bind(std::string dev_ip, std::string dev_id, std::string sec_link, std::string timezone, bool improved, OnUpdateStatusFn update_fn) = 0;
     /**
      * Remove the association between the current account and the given printer.
      * On success, local caches should be updated to drop state for `dev_id`.
@@ -479,29 +476,29 @@ public:
      * condition (e.g., printer ready, firmware acknowledgment); it returns
      * true to continue waiting or false to abort.
      */
-    virtual int start_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn) = 0;
+    virtual int start_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) = 0;
     /**
      * Start a local print that also uploads a record of the job to the cloud
      * (used by Bambu Studio's "Local Print with History" feature).
      */
-    virtual int start_local_print_with_record(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn) = 0;
+    virtual int start_local_print_with_record(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) = 0;
     /**
      * Upload a gcode file to the printer's SD card but do not start it.
      * The helper handles chunked FTP uploads and progress callbacks.
      */
-    virtual int start_send_gcode_to_sdcard(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, BBL::OnWaitFn wait_fn) = 0;
+    virtual int start_send_gcode_to_sdcard(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) = 0;
     /**
      * Start a LAN-only print with files that already exist locally.
      * There is no cloud project involved, making it the fastest path when the
      * PC and printer share the same network.
      */
-    virtual int start_local_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn) = 0;
+    virtual int start_local_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn) = 0;
     /**
      * Start a print directly from the printer's SD card.
      * The agent only sends a command referencing a file already uploaded via
      * `start_send_gcode_to_sdcard`.
      */
-    virtual int start_sdcard_print(BBL::PrintParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn) = 0;
+    virtual int start_sdcard_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn) = 0;
 
     // ========================================================================
     // Cloud Services
@@ -527,9 +524,9 @@ public:
     virtual int get_user_print_info(unsigned int* http_code, std::string* http_body) = 0;
     /**
      * Query the user's tasks/prints using the structured parameters defined in
-     * `BBL::TaskQueryParams`. The response JSON is stored in `http_body`.
+     * `TaskQueryParams`. The response JSON is stored in `http_body`.
      */
-    virtual int get_user_tasks(BBL::TaskQueryParams params, std::string* http_body) = 0;
+    virtual int get_user_tasks(TaskQueryParams params, std::string* http_body) = 0;
     /**
      * Fetch firmware information for a printer, including latest available
      * version. Mainly used by the updater UI.
@@ -594,7 +591,7 @@ public:
      * review) while `cancel_fn` allows the caller to abort the long-running job.
      * `out` optionally receives the new listing id/URL on success.
      */
-    virtual int start_publish(BBL::PublishParams params, BBL::OnUpdateStatusFn update_fn, BBL::WasCancelledFn cancel_fn, std::string* out) = 0;
+    virtual int start_publish(PublishParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, std::string* out) = 0;
     /**
      * Retrieve the base URL that the GUI should open when the user wants to
      * publish models via the website.
