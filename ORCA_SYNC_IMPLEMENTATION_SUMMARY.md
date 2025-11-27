@@ -76,7 +76,7 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 #include "OrcaNetwork.hpp"
 
 auto network = new Slic3r::OrcaNetwork("/path/to/logs");
-network->set_backend_url("http://localhost:8080");
+// Backend URL fixed to Supabase; use ORCA_BACKEND_URL env var for internal testing.
 network->set_queue_on_main_fn([](auto fn) { wxGetApp().CallAfter(fn); });
 network->start();
 network->connect_server();

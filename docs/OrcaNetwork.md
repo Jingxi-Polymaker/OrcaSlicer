@@ -2,12 +2,20 @@
 
 ## Overview
 
-**OrcaNetwork** is a drop-in replacement for the `NetworkAgent` class in OrcaSlicer. Unlike NetworkAgent, which dynamically loads a proprietary binary library (`bambu_networking.dll/.dylib/.so`), OrcaNetwork is:
+**OrcaNetwork** implements the `INetworkAgent` interface in-process (no external
+`bambu_networking` library). It now targets the **Supabase + Orca API Gateway**
+stack described in *Orca API Gateway.md*:
 
-- **Fully open source** - Complete C++ implementation in the OrcaSlicer codebase
-- **No dynamic libraries** - Compiled directly into OrcaSlicer
-- **Simulated backend** - Works with a local Python/Flask backend service for testing
-- **Feature subset** - Implements user management and settings sync; printer operations are stubs
+- **Auth (Lane A):** direct HTTPS calls to Supabase GoTrue at
+  `https://auth.orcaslicer.com/auth/v1/*` using PKCE.
+- **Data (Lane B):** application traffic (presets, sync, future marketplace)
+  will go through the Cloudflare Worker gateway at `https://api.orcaslicer.com`.
+- **Open source & compiled in:** all logic lives in `src/slic3r/Utils/`.
+- **Printer operations:** remain stubs for compatibility.
+
+> Legacy note: earlier revisions documented a local Flask backend at
+> `http://localhost:8080`. That flow is deprecated; keep it only for ad‑hoc
+> developer testing.
 
 ## Architecture
 
@@ -36,15 +44,20 @@
                          │ HTTP/REST (libcurl via Http class)
                          ▼
          ┌─────────────────────────────────┐
-         │   OrcaNetwork Backend Service   │
-         │      (Python Flask)             │
-         │   http://localhost:8080         │
-         │                                 │
-         │  • /api/v1/auth/login           │
-         │  • /api/v1/auth/logout          │
-         │  • /api/v1/presets (CRUD)       │
-         │  • /api/v1/presets/sync         │
+         │           Supabase Auth         │
+         │      https://auth.orcaslicer.com│
+         │  • /auth/v1/authorize (PKCE)    │
+         │  • /auth/v1/token (PKCE)        │
+         │  • /auth/v1/logout              │
+         └─────────────────────────────────┘
+                        │
+                        ▼
+         ┌─────────────────────────────────┐
+         │      Orca API Gateway           │
+         │     https://api.orcaslicer.com  │
+         │  • /api/v1/presets (CRUD/sync)  │
          │  • /api/v1/health               │
+         │  • future plugin endpoints      │
          └─────────────────────────────────┘
                          │
                          ▼
@@ -59,31 +72,48 @@
 
 ## Key Features
 
-### 1. User Management
+### 1. User Management (Supabase PKCE)
 
 **Implemented Methods:**
-- `change_user(user_info)` - Login with username/password
-- `user_logout(request)` - Logout and clear session
-- `is_user_login()` - Check login status
-- `get_user_id()` - Get current user ID
-- `get_user_name()` - Get current user name
-- `get_user_avatar()` - Get avatar URL
-- `get_user_nickanme()` - Get nickname
-- `build_login_cmd()` - Build login command JSON
-- `build_logout_cmd()` - Build logout command JSON
-- `build_login_info()` - Build user info JSON
+- `change_user(user_info)` – Accepts Supabase session JSON (or WebView `user_login` message) and sets the active session.
+- `set_user_session(...)` – Direct helper invoked by WebView bridge after browser auth completes.
+- `user_logout(request)` – Revokes Supabase session (when `request=true`) and clears local/secure storage.
+- `is_user_login()`, `get_user_id()`, `get_user_name()`, `get_user_avatar()`, `get_user_nickanme()` – read accessors.
+- `build_login_cmd()` – Emits PKCE-capable login command for the embedded web view.
+- `build_logout_cmd()` / `build_login_info()` – broadcast logout/login snapshots to the web view.
 
-**Authentication Flow:**
-1. GUI calls `change_user()` with JSON containing username/password
-2. OrcaNetwork sends POST to `/api/v1/auth/login`
-3. Backend validates credentials and returns session token
-4. Token stored for subsequent authenticated requests
-5. `OnUserLoginFn` callback invoked with login status
+**Supabase PKCE Login Flow (desktop):**
+1) **Generate PKCE + state**: OrcaNetwork creates `code_verifier`, `S256` `code_challenge`, random `state`, and loopback redirect `http://localhost:41172/callback` on startup (`ensure_pkce_material`).
+2) **Launch browser via WebView**: `build_login_cmd()` returns JSON:
+```json
+{
+  "action": "login",
+  "provider": "orca",
+  "backend_url": "https://auth.orcaslicer.com",
+  "pkce": {
+    "code_challenge": "<S256>",
+    "code_challenge_method": "S256",
+    "state": "<random>",
+    "redirect_uri": "http://localhost:41172/callback",
+    "code_verifier": "<kept in app>",
+    "loopback_port": 41172
+  }
+}
+```
+The JS/UI layer builds the Supabase authorize URL with these fields and opens the system browser.
+3) **User authenticates** in the browser; Supabase redirects to the local loopback server with `code` + `state`.
+4) **Token exchange**: The WebView helper posts the Supabase token response (includes `access_token`, `refresh_token`, user profile) back into the app as `user_login` JSON; OrcaNetwork parses it in `change_user()` and calls `set_user_session()`.
+5) **Secure persistence**: `refresh_token` is saved into OS keyring via `wxSecretStore` when available; otherwise AES-256-GCM encrypted to `supabase_refresh_token.sec` under the user config dir (key derived from machine id).
+6) **Silent sign-in / refresh**: On startup, OrcaNetwork loads the stored refresh token and exchanges it at `/auth/v1/token` (grant_type=refresh_token). If successful, it repopulates the session and fires the login callback.
+7) **Bearer usage**: All API calls attach `Authorization: Bearer <access_token>` automatically; the token endpoint intentionally omits Authorization to allow refresh.
 
-**Session Management:**
-- Bearer token authentication via `Authorization` header
-- Tokens valid for 24 hours (configurable in backend)
-- Automatic token inclusion in all authenticated requests
+**Session Management Notes:**
+- Logout clears memory, deletes secure storage, and optionally POSTs `/auth/v1/logout` with the refresh token.
+- PKCE material is regenerated lazily but kept per-process to avoid cross-login mixing.
+- Anon key usage is **scoped to auth only**: the `apikey` from `ORCA_BACKEND_ANON_KEY`
+  must be sent with Supabase `/auth/v1/*` calls, but **must not** be forwarded to the
+  API gateway (`api.orcaslicer.com`). The current code injects the key globally; this
+  will be narrowed to auth endpoints in a follow-up change.
 
 ### 2. Settings Sync
 
@@ -107,7 +137,7 @@ user_presets["filament"]["uuid-456"] = "{\"name\":\"PLA Basic\", ...}";
 
 **Synchronization Flow:**
 1. Call `get_setting_list2()` with callbacks
-2. Background thread fetches from `/api/v1/presets/sync`
+2. Background thread fetches from `/api/v1/presets/sync` (via API Gateway)
 3. For each preset, `CheckFn` callback invoked with preset info
 4. Progress reported via `ProgressFn` (0-100%)
 5. Supports cancellation via `WasCancelledFn`
@@ -122,7 +152,7 @@ user_presets["filament"]["uuid-456"] = "{\"name\":\"PLA Basic\", ...}";
 - `stop_subscribe(module)` - Stub (logs only)
 
 **Health Check:**
-- GET `/api/v1/health` endpoint
+- GET `/api/v1/health` endpoint (served by the API Gateway)
 - Sets `is_connected` flag on success
 - Invokes `OnServerConnectedFn` callback
 
@@ -174,7 +204,8 @@ auto network = new Slic3r::OrcaNetwork("/path/to/logs");
 // Configure
 network->set_config_dir("/path/to/config");
 network->set_country_code("US");
-network->set_backend_url("http://localhost:8080"); // Optional, defaults to localhost
+// Backend URL is fixed to the Supabase auth host (https://auth.orcaslicer.com).
+// For internal testing you can set ORCA_BACKEND_URL env var before launch.
 
 // Register callbacks
 network->set_queue_on_main_fn([](std::function<void()> fn) {
@@ -222,14 +253,17 @@ delete network;
 
 ## Configuration
 
-### Backend URL
+### Backend Hosts
 
-Default: `http://localhost:8080`
+- **Auth host (Lane A):** `https://auth.orcaslicer.com` (Supabase). Requires
+  `apikey` = anon key. Used for `/auth/v1/*` and PKCE login/refresh/logout.
+- **API Gateway host (Lane B):** `https://api.orcaslicer.com` for presets/sync and
+  future cloud features. Do **not** send the anon key; the gateway handles
+  credentials server-side.
 
-Change via:
-```cpp
-network->set_backend_url("http://custom-host:port");
-```
+Current implementation uses a fixed Supabase auth host (`https://auth.orcaslicer.com`)
+for both auth and API calls. For internal testing you may override via the
+`ORCA_BACKEND_URL` environment variable before launching OrcaSlicer.
 
 ### Logging
 
@@ -395,7 +429,7 @@ Potential improvements:
 
 **Solutions:**
 - Ensure backend service is running: `python backend/orca_backend.py`
-- Check URL: `network->set_backend_url("http://localhost:8080")`
+- Backend URL is fixed to `https://auth.orcaslicer.com`; override via `ORCA_BACKEND_URL` env for internal testing.
 - Verify port not blocked by firewall
 - Check backend logs for errors
 
@@ -460,7 +494,7 @@ Create test cases:
 
 void test_login() {
     OrcaNetwork network("/tmp/logs");
-    network.set_backend_url("http://localhost:8080");
+    // Backend URL fixed to Supabase; use ORCA_BACKEND_URL env var for internal testing.
 
     std::string user_info = R"({"username":"test_user","password":"password123"})";
     int result = network.change_user(user_info);

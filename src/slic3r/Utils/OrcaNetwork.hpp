@@ -4,10 +4,12 @@
 #include "INetworkAgent.hpp"
 #include "bambu_networking.hpp"
 #include "../../libslic3r/ProjectTask.hpp"
+#include "AuthManager.hpp"
 #include <string>
 #include <map>
 #include <mutex>
 #include <functional>
+#include <memory>
 
 namespace Slic3r {
 
@@ -71,7 +73,8 @@ public:
 
     // OrcaNetwork-specific: WebView login support
     int set_user_session(std::string token, std::string user_id, std::string username,
-                        std::string name, std::string nickname, std::string avatar);
+                        std::string name, std::string nickname, std::string avatar,
+                        std::string refresh_token = "");
     std::string get_user_id() override;
     std::string get_user_name() override;
     std::string get_user_avatar() override;
@@ -164,7 +167,6 @@ public:
 
     // Utility methods (OrcaNetwork-specific, not in interface)
     std::string get_backend_url() const { return backend_url; }
-    void set_backend_url(const std::string& url) { backend_url = url; }
 
 private:
     // HTTP request helpers
@@ -201,7 +203,9 @@ private:
     std::string user_name;
     std::string user_avatar;
     std::string user_nickname;
+    std::string refresh_token;
     std::string selected_machine;
+    std::unique_ptr<AuthManager> auth_manager;
 
     // Callbacks
 OnMsgArrivedFn on_ssdp_msg_fn;

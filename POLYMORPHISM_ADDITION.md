@@ -233,7 +233,7 @@ if (use_orca) {
     // Configure OrcaNetwork-specific settings
     auto* orca = dynamic_cast<OrcaNetwork*>(agent.get());
     if (orca) {
-        orca->set_backend_url(app_config->get("orca_backend_url"));
+        // OrcaNetwork backend URL is fixed; set ORCA_BACKEND_URL env var before launch if needed.
     }
 }
 ```
@@ -324,7 +324,7 @@ if (use_orca) {
     if (orca) {
         std::string backend_url = app_config->get("orca_backend_url");
         if (!backend_url.empty()) {
-            orca->set_backend_url(backend_url);
+            // Backend URL override removed; set ORCA_BACKEND_URL env var instead.
         }
     }
 }

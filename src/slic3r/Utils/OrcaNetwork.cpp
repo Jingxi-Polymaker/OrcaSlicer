@@ -3,13 +3,22 @@
 #include <boost/log/trivial.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
-#include <boost/algorithm/string.hpp>
+#include <wx/filename.h>
 #include <sstream>
-#include <thread>
+#include <cstdlib>
 
 namespace pt = boost::property_tree;
 
 namespace Slic3r {
+
+namespace {
+constexpr const char* ORCA_DEFAULT_BACKEND_URL = "https://auth.orcaslicer.com";
+constexpr const char* ORCA_HEALTH_PATH = "/auth/v1/health";
+constexpr const char* ORCA_LOGOUT_PATH = "/auth/v1/logout";
+constexpr const char* ENV_ORCA_BACKEND_URL = "ORCA_DEFAULT_BACKEND_URL";
+constexpr const char* ENV_ORCA_BACKEND_ANON_KEY = "ORCA_BACKEND_ANON_KEY";
+constexpr const char* ENV_BACKEND_OVERRIDE = "ORCA_BACKEND_URL";
+}
 
 // ============================================================================
 // Constructor / Destructor
@@ -17,13 +26,38 @@ namespace Slic3r {
 
 OrcaNetwork::OrcaNetwork(std::string log_dir)
     : log_dir(log_dir)
-    , backend_url("http://localhost:8080")
+    , backend_url(ORCA_DEFAULT_BACKEND_URL)
     , is_connected(false)
     , is_logged_in(false)
     , enable_track(false)
     , multi_machine_enabled(false)
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Constructor - log_dir=" << log_dir;
+    const char* override_url = std::getenv(ENV_BACKEND_OVERRIDE);
+    const char* orca_backend_url = std::getenv(ENV_ORCA_BACKEND_URL);
+    if (override_url && *override_url) {
+        backend_url = override_url;
+    } else if (orca_backend_url && *orca_backend_url) {
+        backend_url = orca_backend_url;
+    }
+
+    if (const char* anon_key = std::getenv(ENV_ORCA_BACKEND_ANON_KEY)) {
+        if (*anon_key != '\0') {
+            extra_headers["apikey"] = anon_key;
+        } else {
+            BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: ORCA_BACKEND_ANON_KEY is empty; Orca cloud requests may fail";
+        }
+    } else {
+        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: ORCA_BACKEND_ANON_KEY not set; Orca cloud requests may fail";
+    }
+
+    auth_manager = std::make_unique<AuthManager>(backend_url);
+    auth_manager->set_extra_headers(extra_headers);
+    auth_manager->set_session_handler([this](const std::string& payload) {
+        return this->change_user(payload) == BAMBU_NETWORK_SUCCESS;
+    });
+
+    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Constructor - log_dir=" << log_dir
+                            << ", backend_url=" << backend_url;
 }
 
 OrcaNetwork::~OrcaNetwork()
@@ -50,6 +84,10 @@ int OrcaNetwork::set_config_dir(std::string config_dir)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: set_config_dir - " << config_dir;
     this->config_dir = config_dir;
+
+    if (auth_manager) {
+        auth_manager->set_config_dir(config_dir);
+    }
     return BAMBU_NETWORK_SUCCESS;
 }
 
@@ -72,7 +110,23 @@ int OrcaNetwork::set_country_code(std::string country_code)
 int OrcaNetwork::start()
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: start()";
-    // Nothing special to do at start
+    // Initialize TLS using system certificates so HTTPS Orca cloud calls work out of the box.
+    if (auto err = Http::tls_global_init(); !err.empty()) {
+        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: tls_global_init warning - " << err;
+    }
+    if (auto err = Http::tls_system_cert_store(); !err.empty()) {
+        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: tls_system_cert_store warning - " << err;
+    }
+
+    if (auth_manager) {
+        auth_manager->regenerate_pkce();
+    }
+
+    // Attempt silent sign-in using stored refresh token
+    std::string stored_refresh;
+    if (auth_manager && auth_manager->load_refresh_token(stored_refresh)) {
+        auth_manager->try_refresh_async(stored_refresh);
+    }
     return BAMBU_NETWORK_SUCCESS;
 }
 
@@ -175,7 +229,13 @@ int OrcaNetwork::connect_server()
     std::string response;
     unsigned int http_code = 0;
 
-    int result = http_get("/api/v1/health", &response, &http_code);
+    int result = http_get(ORCA_HEALTH_PATH, &response, &http_code);
+
+    if (!(result == BAMBU_NETWORK_SUCCESS && http_code == 200)) {
+        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: Orca cloud health check failed (http_code=" << http_code
+                                   << "), falling back to legacy /api/v1/health";
+        result = http_get("/api/v1/health", &response, &http_code);
+    }
 
     if (result == BAMBU_NETWORK_SUCCESS && http_code == 200) {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);
@@ -250,7 +310,8 @@ void OrcaNetwork::enable_multi_machine(bool enable)
 // ============================================================================
 
 int OrcaNetwork::set_user_session(std::string token, std::string user_id, std::string username,
-                                  std::string name, std::string nickname, std::string avatar)
+                                  std::string name, std::string nickname, std::string avatar,
+                                  std::string refresh_token)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: set_user_session - user_id=" << user_id << ", username=" << username;
 
@@ -258,6 +319,7 @@ int OrcaNetwork::set_user_session(std::string token, std::string user_id, std::s
     {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);
         session_token = token;
+        this->refresh_token = refresh_token;
         this->user_id = user_id;
         this->user_name = name;
         this->user_nickname = nickname;
@@ -265,7 +327,12 @@ int OrcaNetwork::set_user_session(std::string token, std::string user_id, std::s
         is_logged_in = true;
     }
 
-    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: WebView login successful - user_id=" << user_id;
+    // Persist refresh token securely for silent re-auth
+    if (auth_manager) {
+        auth_manager->persist_refresh_token(refresh_token);
+    }
+
+    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Auth login successful - user_id=" << user_id;
 
     // Invoke callback
     invoke_user_login_callback(1, true);
@@ -283,19 +350,30 @@ int OrcaNetwork::change_user(std::string user_info)
         pt::ptree tree;
         pt::read_json(ss, tree);
 
-        // Check if this is a WebView login message
+        auto read_str = [](const pt::ptree& node, const std::string& path) {
+            return node.get<std::string>(path, "");
+        };
+
+        // Check if this is a WebView login message (PKCE flow completion).
         std::string command = tree.get<std::string>("command", "");
         if (command == "user_login") {
             BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Detected WebView login message";
 
-            // Extract data from WebView message
-            pt::ptree data = tree.get_child("data");
-            std::string token = data.get<std::string>("token", "");
-            std::string user_id = data.get<std::string>("user_id", "");
-            std::string username = data.get<std::string>("username", "");
-            std::string name = data.get<std::string>("name", "");
-            std::string nickname = data.get<std::string>("nickname", "");
-            std::string avatar = data.get<std::string>("avatar", "");
+            auto data_opt = tree.get_child_optional("data");
+            if (!data_opt) {
+                BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: WebView login payload missing data field";
+                invoke_user_login_callback(0, false);
+                return BAMBU_NETWORK_ERR_INVALID_HANDLE;
+            }
+
+            pt::ptree data = *data_opt;
+            std::string token = read_str(data, "token");
+            std::string user_id = read_str(data, "user_id");
+            std::string username = read_str(data, "username");
+            std::string name = read_str(data, "name");
+            std::string nickname = read_str(data, "nickname");
+            std::string avatar = read_str(data, "avatar");
+            std::string refresh_token = read_str(data, "refresh_token");
 
             if (token.empty() || user_id.empty()) {
                 BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: WebView login - token or user_id empty";
@@ -303,62 +381,60 @@ int OrcaNetwork::change_user(std::string user_info)
                 return BAMBU_NETWORK_ERR_INVALID_HANDLE;
             }
 
-            // Set session using WebView data
-            return set_user_session(token, user_id, username, name, nickname, avatar);
+            return set_user_session(token, user_id, username, name, nickname, avatar, refresh_token);
         }
 
-        // Traditional username/password login
-        std::string username = tree.get<std::string>("username", "");
-        std::string password = tree.get<std::string>("password", "");
-
-        if (username.empty() || password.empty()) {
-            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: Username or password empty";
-            invoke_user_login_callback(0, false);
-            return BAMBU_NETWORK_ERR_INVALID_HANDLE;
+        // Orca cloud session payload (default flow). Accept either data.* or top-level keys.
+        const pt::ptree* session_node = nullptr;
+        auto data_opt = tree.get_child_optional("data");
+        if (data_opt) {
+            if (data_opt->get_child_optional("session")) {
+                session_node = &data_opt->get_child("session");
+            } else if (data_opt->get_optional<std::string>("access_token") ||
+                       data_opt->get_optional<std::string>("token")) {
+                session_node = &*data_opt;
+            }
         }
-
-        // Build login request
-        pt::ptree login_req;
-        login_req.put("username", username);
-        login_req.put("password", password);
-
-        std::stringstream login_ss;
-        pt::write_json(login_ss, login_req);
-
-        std::string response;
-        unsigned int http_code = 0;
-
-        int result = http_post("/api/v1/auth/login", login_ss.str(), &response, &http_code);
-
-        if (result == BAMBU_NETWORK_SUCCESS && http_code == 200) {
-            // Parse response
-            std::stringstream resp_ss(response);
-            pt::ptree resp_tree;
-            pt::read_json(resp_ss, resp_tree);
-
-            bool success = resp_tree.get<bool>("success", false);
-            if (success) {
-                // Extract user data
-                std::lock_guard<std::recursive_mutex> lock(state_mutex);
-                session_token = resp_tree.get<std::string>("token", "");
-                user_id = resp_tree.get<std::string>("user.user_id", "");
-                user_name = resp_tree.get<std::string>("user.name", "");
-                user_nickname = resp_tree.get<std::string>("user.nickname", "");
-                user_avatar = resp_tree.get<std::string>("user.avatar", "");
-                is_logged_in = true;
-
-                BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Login successful - user_id=" << user_id;
-
-                // Invoke callback
-                invoke_user_login_callback(1, true);
-
-                return BAMBU_NETWORK_SUCCESS;
+        if (!session_node) {
+            if (tree.get_child_optional("session")) {
+                session_node = &tree.get_child("session");
+            } else if (tree.get_optional<std::string>("access_token") ||
+                       tree.get_optional<std::string>("token")) {
+                session_node = &tree;
             }
         }
 
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: Login failed - http_code=" << http_code;
+        if (session_node) {
+            std::string access_token = read_str(*session_node, "access_token");
+            if (access_token.empty()) {
+                access_token = read_str(*session_node, "token");
+            }
+            std::string refresh_token = read_str(*session_node, "refresh_token");
+            std::string user_id = read_str(*session_node, "user.id");
+            std::string email = read_str(*session_node, "user.email");
+            std::string full_name = read_str(*session_node, "user.user_metadata.full_name");
+            std::string preferred_username = read_str(*session_node, "user.user_metadata.preferred_username");
+            std::string avatar = read_str(*session_node, "user.user_metadata.avatar_url");
+            std::string username = !preferred_username.empty() ? preferred_username : email;
+            std::string name = !full_name.empty() ? full_name : (!preferred_username.empty() ? preferred_username : email);
+            std::string nickname = !preferred_username.empty() ? preferred_username : username;
+            if (nickname.empty()) nickname = name;
+            if (nickname.empty()) nickname = email;
+
+            if (access_token.empty() || user_id.empty()) {
+                BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: Orca cloud login payload missing access_token or user.id";
+                invoke_user_login_callback(0, false);
+                return BAMBU_NETWORK_ERR_INVALID_HANDLE;
+            }
+
+            BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Orca cloud login successful - user_id=" << user_id;
+            return set_user_session(access_token, user_id, username, name, nickname, avatar, refresh_token);
+        }
+
+        // Legacy username/password flow is no longer the default; instruct callers to use Orca cloud PKCE.
+        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: Username/password login is disabled. Use the Orca cloud PKCE flow.";
         invoke_user_login_callback(0, false);
-        return BAMBU_NETWORK_ERR_CONNECT_FAILED;
+        return BAMBU_NETWORK_ERR_INVALID_HANDLE;
 
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: change_user exception - " << e.what();
@@ -379,27 +455,48 @@ int OrcaNetwork::user_logout(bool request)
 
     // Check if we need to send logout request (with proper locking)
     bool should_send_request = false;
+    std::string refresh_copy;
     {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);
         should_send_request = request && !session_token.empty();
+        refresh_copy = refresh_token;
     }
 
     if (should_send_request) {
         // Send logout request to backend
         std::string response;
         unsigned int http_code = 0;
-        http_post("/api/v1/auth/logout", "", &response, &http_code);
+        pt::ptree logout_req;
+        if (!refresh_copy.empty()) {
+            logout_req.put("refresh_token", refresh_copy);
+        }
+        std::stringstream body_ss;
+        if (!logout_req.empty()) {
+            pt::write_json(body_ss, logout_req);
+        } else {
+            body_ss << "{}";
+        }
+
+        int result = http_post(ORCA_LOGOUT_PATH, body_ss.str(), &response, &http_code);
+        if (result != BAMBU_NETWORK_SUCCESS || http_code >= 400) {
+            BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: Orca cloud logout request failed - http_code=" << http_code;
+        }
     }
 
     // Clear session
     {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);
         session_token.clear();
+        refresh_token.clear();
         user_id.clear();
         user_name.clear();
         user_nickname.clear();
         user_avatar.clear();
         is_logged_in = false;
+    }
+
+    if (auth_manager) {
+        auth_manager->clear_refresh_token();
     }
 
     // Invoke callback
@@ -434,12 +531,42 @@ std::string OrcaNetwork::get_user_nickanme()
 
 std::string OrcaNetwork::build_login_cmd()
 {
-    return "{\"action\":\"login\"}";
+    if (!auth_manager) {
+        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: auth_manager is null in build_login_cmd (fatal)";
+        return "{}";
+    }
+    auth_manager->regenerate_pkce();
+    AuthManager::PkceBundle pkce_bundle;
+    pkce_bundle = auth_manager->pkce();
+
+    pt::ptree tree;
+    tree.put("action", "login");
+    tree.put("provider", "orca");
+    tree.put("backend_url", backend_url);
+
+    pt::ptree pkce_node;
+    pkce_node.put("code_challenge", pkce_bundle.challenge);
+    pkce_node.put("code_challenge_method", "S256");
+    pkce_node.put("state", pkce_bundle.state);
+    pkce_node.put("redirect_uri", pkce_bundle.redirect);
+    pkce_node.put("code_verifier", pkce_bundle.verifier); // kept in-process; used by embedded login helper
+    pkce_node.put("loopback_port", pkce_bundle.loopback_port);
+    tree.add_child("pkce", pkce_node);
+
+    std::stringstream ss;
+    pt::write_json(ss, tree);
+    return ss.str();
 }
 
 std::string OrcaNetwork::build_logout_cmd()
 {
-    return "{\"action\":\"logout\"}";
+    pt::ptree tree;
+    tree.put("action", "logout");
+    tree.put("provider", "orca");
+
+    std::stringstream ss;
+    pt::write_json(ss, tree);
+    return ss.str();
 }
 
 std::string OrcaNetwork::build_login_info()
@@ -452,6 +579,10 @@ std::string OrcaNetwork::build_login_info()
     tree.put("nickname", user_nickname);
     tree.put("avatar", user_avatar);
     tree.put("logged_in", is_logged_in);
+    // Do not expose tokens to WebView to avoid leaking credentials to remote content.
+    tree.put("access_token", "");
+    tree.put("refresh_token", "");
+    tree.put("backend_url", backend_url);
 
     std::stringstream ss;
     pt::write_json(ss, tree);
@@ -762,7 +893,15 @@ int OrcaNetwork::set_extra_http_header(std::map<std::string, std::string> extra_
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: set_extra_http_header - count=" << extra_headers.size();
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
+    auto existing_api_key_it = this->extra_headers.find("apikey");
+    const std::string existing_api_key = existing_api_key_it != this->extra_headers.end() ? existing_api_key_it->second : "";
     this->extra_headers = extra_headers;
+    if (!existing_api_key.empty() && this->extra_headers.find("apikey") == this->extra_headers.end()) {
+        this->extra_headers["apikey"] = existing_api_key;
+    }
+    if (auth_manager) {
+        auth_manager->set_extra_headers(this->extra_headers);
+    }
     return BAMBU_NETWORK_SUCCESS;
 }
 
@@ -842,7 +981,7 @@ int OrcaNetwork::http_post(const std::string& path, const std::string& body, std
         // Add headers
         {
             std::lock_guard<std::recursive_mutex> lock(state_mutex);
-            if (!session_token.empty()) {
+            if (!session_token.empty() && path != ORCA_TOKEN_PATH) {
                 http.header("Authorization", "Bearer " + session_token);
             }
 

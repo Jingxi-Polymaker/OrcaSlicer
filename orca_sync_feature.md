@@ -105,7 +105,7 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 
 // Create and configure
 auto network = new Slic3r::OrcaNetwork("/path/to/logs");
-network->set_backend_url("http://localhost:8080");
+    // Backend URL is fixed to Supabase; use ORCA_BACKEND_URL env var for internal testing.
 
 // REQUIRED: Register main thread queue for thread-safe callbacks
 network->set_queue_on_main_fn([](std::function<void()> fn) {
@@ -317,7 +317,7 @@ app.run(host='0.0.0.0', port=9090, debug=True)
 
 Then update C++ code:
 ```cpp
-network->set_backend_url("http://localhost:9090");
+    // Backend URL override is via ORCA_BACKEND_URL environment variable.
 ```
 
 ### Login Fails

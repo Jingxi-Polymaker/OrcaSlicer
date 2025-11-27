@@ -548,6 +548,8 @@ set(SLIC3R_GUI_SOURCES
     Utils/AstroBox.cpp
     Utils/AstroBox.hpp
     Utils/bambu_networking.hpp
+    Utils/AuthManager.cpp
+    Utils/AuthManager.hpp
     Utils/Bonjour.cpp
     Utils/Bonjour.hpp
     Utils/CalibUtils.cpp

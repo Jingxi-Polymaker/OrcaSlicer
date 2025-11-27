@@ -246,7 +246,7 @@ if (use_orca) {
     // Configure OrcaNetwork-specific settings
     std::string backend_url = app_config->get("orca_backend_url");
     if (!backend_url.empty()) {
-        dynamic_cast<OrcaNetwork*>(orca_net.get())->set_backend_url(backend_url);
+        // OrcaNetwork now uses a fixed Supabase host; override via ORCA_BACKEND_URL env if needed.
     }
 
     m_agent = orca_net.release();
@@ -272,7 +272,7 @@ INetworkAgent* create_and_configure_agent(
         // Configure OrcaNetwork-specific settings
         std::string backend_url = app_config->get("orca_backend_url");
         if (!backend_url.empty()) {
-            agent->set_backend_url(backend_url);
+            // Backend URL override is no longer set at runtime; use ORCA_BACKEND_URL env for testing.
         }
 
         return agent.release();
@@ -454,7 +454,7 @@ INetworkAgent* agent = NetworkAgentFactory::create_orca_network(log_dir);
 // Downcast only when needed
 if (auto* orca = dynamic_cast<OrcaNetwork*>(agent)) {
     // OrcaNetwork-specific methods
-    orca->set_backend_url("http://localhost:9090");
+    // Backend URL is fixed; set ORCA_BACKEND_URL env var before launching if you must point elsewhere.
 }
 ```
 
@@ -469,7 +469,7 @@ void configure_agent(INetworkAgent* agent, AppConfig* config) {
 
     // Implementation-specific configuration
     if (auto* orca = dynamic_cast<OrcaNetwork*>(agent)) {
-        orca->set_backend_url(config->get("orca_backend_url"));
+        // Backend URL override removed; use ORCA_BACKEND_URL env if necessary.
     }
     // NetworkAgent doesn't need special config
 }
@@ -604,7 +604,7 @@ class OrcaNetwork : public INetworkAgent {
 ```cpp
 if (auto* orca = dynamic_cast<OrcaNetwork*>(agent)) {
     // Only executes if agent is actually OrcaNetwork
-    orca->set_backend_url(...);
+    // Backend URL override removed; set ORCA_BACKEND_URL env var if absolutely necessary.
 }
 ```
 
