@@ -166,7 +166,7 @@ public:
     std::string get_version() override;
 
     // Utility methods (OrcaNetwork-specific, not in interface)
-    std::string get_backend_url() const { return backend_url; }
+    std::string get_backend_url() const { return api_base_url; }
 
 private:
     // HTTP request helpers
@@ -174,6 +174,7 @@ private:
     int http_post(const std::string& path, const std::string& body, std::string* response_body, unsigned int* http_code);
     int http_put(const std::string& path, const std::string& body, std::string* response_body, unsigned int* http_code);
     int http_delete(const std::string& path, std::string* response_body, unsigned int* http_code);
+    int http_post_auth(const std::string& path, const std::string& body, std::string* response_body, unsigned int* http_code);
 
     // Callback invocation helpers (thread-safe via queue_on_main)
     void invoke_user_login_callback(int online_login, bool login);
@@ -190,20 +191,15 @@ private:
     std::string cert_folder;
     std::string cert_filename;
     std::string country_code;
-    std::string backend_url;
+    std::string api_base_url;
+    std::string auth_base_url;
     std::map<std::string, std::string> extra_headers;
+    std::map<std::string, std::string> auth_headers;
 
     // Member variables - state
     bool is_connected;
-    bool is_logged_in;
     bool enable_track;
     bool multi_machine_enabled;
-    std::string session_token;
-    std::string user_id;
-    std::string user_name;
-    std::string user_avatar;
-    std::string user_nickname;
-    std::string refresh_token;
     std::string selected_machine;
     std::unique_ptr<AuthManager> auth_manager;
 

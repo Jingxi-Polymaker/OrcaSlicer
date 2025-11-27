@@ -214,8 +214,8 @@ bool aes256gcm_decrypt(const std::string& b64_payload, const std::vector<unsigne
 }
 } // namespace
 
-AuthManager::AuthManager(std::string backend_url)
-    : backend_url(std::move(backend_url))
+AuthManager::AuthManager(std::string auth_base_url)
+    : auth_base_url(std::move(auth_base_url))
 {
     pkce_bundle.redirect = "http://localhost:" + std::to_string(ORCA_LOOPBACK_PORT) + ORCA_LOOPBACK_PATH;
     regenerate_pkce();
@@ -243,6 +243,11 @@ void AuthManager::set_config_dir(const std::string& config_dir)
     refresh_fallback_path = fallback.GetFullPath().ToStdString();
 }
 
+void AuthManager::set_api_base_url(const std::string& api_base)
+{
+    api_base_url = api_base;
+}
+
 void AuthManager::set_session_handler(SessionHandler handler)
 {
     session_handler = std::move(handler);
@@ -265,6 +270,41 @@ void AuthManager::regenerate_pkce()
         pkce_bundle.redirect = "http://localhost:" + std::to_string(ORCA_LOOPBACK_PORT) + ORCA_LOOPBACK_PATH;
     }
     BOOST_LOG_TRIVIAL(debug) << "AuthManager: regenerated PKCE bundle";
+}
+
+std::string AuthManager::build_login_cmd()
+{
+    regenerate_pkce();
+    const auto bundle = pkce();
+
+    pt::ptree tree;
+    tree.put("action", "login");
+    tree.put("provider", "orca");
+    tree.put("backend_url", auth_base_url);
+
+    pt::ptree pkce_node;
+    pkce_node.put("code_challenge", bundle.challenge);
+    pkce_node.put("code_challenge_method", "S256");
+    pkce_node.put("state", bundle.state);
+    pkce_node.put("redirect_uri", bundle.redirect);
+    pkce_node.put("code_verifier", bundle.verifier); // kept in-process; used by embedded login helper
+    pkce_node.put("loopback_port", bundle.loopback_port);
+    tree.add_child("pkce", pkce_node);
+
+    std::stringstream ss;
+    pt::write_json(ss, tree);
+    return ss.str();
+}
+
+std::string AuthManager::build_logout_cmd()
+{
+    pt::ptree tree;
+    tree.put("action", "logout");
+    tree.put("provider", "orca");
+
+    std::stringstream ss;
+    pt::write_json(ss, tree);
+    return ss.str();
 }
 
 void AuthManager::persist_refresh_token(const std::string& token)
@@ -416,7 +456,7 @@ bool AuthManager::http_post_token(const std::string& body, std::string* response
     std::string url;
     {
         std::lock_guard<std::mutex> lock(headers_mutex);
-        url = backend_url + ORCA_TOKEN_PATH;
+        url = auth_base_url + ORCA_TOKEN_PATH;
         headers_copy = extra_headers;
     }
     BOOST_LOG_TRIVIAL(trace) << "AuthManager: POST " << url;
@@ -477,6 +517,105 @@ void AuthManager::compute_fallback_path()
     wxFileName fallback(wxStandardPaths::Get().GetUserDataDir(), "orca_refresh_token.sec");
     fallback.Normalize();
     refresh_fallback_path = fallback.GetFullPath().ToStdString();
+}
+
+bool AuthManager::set_user_session(const std::string& token,
+                                   const std::string& user_id,
+                                   const std::string& username,
+                                   const std::string& name,
+                                   const std::string& nickname,
+                                   const std::string& avatar,
+                                   const std::string& refresh_token)
+{
+    {
+        std::lock_guard<std::mutex> lock(session_mutex);
+        session.access_token = token;
+        session.refresh_token = refresh_token;
+        session.user_id = user_id;
+        session.user_name = name.empty() ? username : name;
+        session.user_nickname = nickname.empty() ? (!username.empty() ? username : name) : nickname;
+        session.user_avatar = avatar;
+        session.logged_in = true;
+    }
+
+    if (!refresh_token.empty()) {
+        persist_refresh_token(refresh_token);
+    }
+    BOOST_LOG_TRIVIAL(info) << "AuthManager: set_user_session - user_id=" << user_id << ", username=" << username;
+    return true;
+}
+
+void AuthManager::clear_session()
+{
+    {
+        std::lock_guard<std::mutex> lock(session_mutex);
+        session = SessionInfo{};
+    }
+    clear_refresh_token();
+}
+
+bool AuthManager::is_logged_in() const
+{
+    std::lock_guard<std::mutex> lock(session_mutex);
+    return session.logged_in;
+}
+
+std::string AuthManager::get_access_token() const
+{
+    std::lock_guard<std::mutex> lock(session_mutex);
+    return session.access_token;
+}
+
+std::string AuthManager::get_refresh_token() const
+{
+    std::lock_guard<std::mutex> lock(session_mutex);
+    return session.refresh_token;
+}
+
+std::string AuthManager::get_user_id() const
+{
+    std::lock_guard<std::mutex> lock(session_mutex);
+    return session.user_id;
+}
+
+std::string AuthManager::get_user_name() const
+{
+    std::lock_guard<std::mutex> lock(session_mutex);
+    return session.user_name;
+}
+
+std::string AuthManager::get_user_avatar() const
+{
+    std::lock_guard<std::mutex> lock(session_mutex);
+    return session.user_avatar;
+}
+
+std::string AuthManager::get_user_nickname() const
+{
+    std::lock_guard<std::mutex> lock(session_mutex);
+    return session.user_nickname;
+}
+
+std::string AuthManager::build_login_info() const
+{
+    pt::ptree tree;
+    {
+        std::lock_guard<std::mutex> lock(session_mutex);
+        tree.put("user_id", session.user_id);
+        tree.put("user_name", session.user_name);
+        tree.put("nickname", session.user_nickname);
+        tree.put("avatar", session.user_avatar);
+        tree.put("logged_in", session.logged_in);
+    }
+    // Do not expose tokens to the WebView.
+    tree.put("access_token", "");
+    tree.put("refresh_token", "");
+    tree.put("backend_url", api_base_url);
+    tree.put("auth_url", auth_base_url);
+
+    std::stringstream ss;
+    pt::write_json(ss, tree);
+    return ss.str();
 }
 
 } // namespace Slic3r
