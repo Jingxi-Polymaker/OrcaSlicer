@@ -112,11 +112,7 @@ OrcaNetwork::OrcaNetwork(std::string log_dir)
 OrcaNetwork::~OrcaNetwork()
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Destructor";
-
-    // Logout if logged in
-    if (auth_manager && auth_manager->is_logged_in()) {
-        user_logout(true);
-    }
+    // Do not force logout here so refresh tokens persist across application restarts.
 }
 
 // ============================================================================
