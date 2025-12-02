@@ -583,6 +583,26 @@ std::string OrcaNetwork::build_login_cmd()
         return "{}";
     }
 
+    // When already signed in, emit the homepage payload so the web UI
+    // can flip to the logged-in state without re-opening the login flow.
+    if (auth_manager->is_logged_in()) {
+        pt::ptree cmd;
+        cmd.put("command", "studio_userlogin");
+
+        pt::ptree data;
+        std::string display_name = auth_manager->get_user_nickname();
+        if (display_name.empty()) {
+            display_name = auth_manager->get_user_name();
+        }
+        data.put("name", display_name);
+        data.put("avatar", auth_manager->get_user_avatar());
+        cmd.add_child("data", data);
+
+        std::stringstream ss;
+        pt::write_json(ss, cmd, false);
+        return ss.str();
+    }
+
     // Build login configuration JSON for WebView
     // WebView handles provider selection (password, Google, Apple, GitHub) internally
     const auto& pkce = auth_manager->pkce();
@@ -618,11 +638,14 @@ std::string OrcaNetwork::build_login_cmd()
 
 std::string OrcaNetwork::build_logout_cmd()
 {
-    if (!auth_manager) {
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: auth_manager is null in build_logout_cmd (fatal)";
-        return "{}";
-    }
-    return auth_manager->build_logout_cmd();
+    pt::ptree cmd;
+    cmd.put("command", "studio_useroffline");
+    cmd.put("action", "logout");
+    cmd.put("provider", "orca");
+
+    std::stringstream ss;
+    pt::write_json(ss, cmd, false);
+    return ss.str();
 }
 
 std::string OrcaNetwork::build_login_info()
