@@ -278,10 +278,10 @@ public:
      */
     virtual std::string get_user_nickanme() = 0;
     /**
-     * Build a JSON command describing the login request that should be issued
-     * if the agent is operating through a WebView or delegated authenticator.
-     * This is mostly used by the original proprietary agent to drive the
-     * embedded web login flow.
+     * Build a JSON command containing the login configuration for the WebView.
+     * Returns backend URL, API key, and PKCE parameters. The WebView handles
+     * provider selection (Google, Apple, GitHub, password) internally using
+     * this configuration.
      */
     virtual std::string build_login_cmd() = 0;
     /**

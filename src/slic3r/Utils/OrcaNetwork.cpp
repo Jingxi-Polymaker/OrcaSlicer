@@ -6,6 +6,10 @@
 #include <wx/filename.h>
 #include <sstream>
 #include <cstdlib>
+#include <algorithm>
+#include <chrono>
+#include <cctype>
+#include <thread>
 
 namespace pt = boost::property_tree;
 
@@ -14,6 +18,7 @@ namespace Slic3r {
 namespace {
 constexpr const char* ORCA_DEFAULT_API_URL = "https://api.orcaslicer.com";
 constexpr const char* ORCA_DEFAULT_AUTH_URL = "https://auth.orcaslicer.com";
+constexpr const char* ORCA_BACKEND_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttYXVqanhlcXJxdW5nb25jcXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3ODk4NzAsImV4cCI6MjA3NTM2NTg3MH0.-ChNHK2t0Fbsi8opS2nFse7zxJKpPtvYWqG15sbE908";
 constexpr const char* ORCA_HEALTH_PATH = "/v1/health";
 constexpr const char* ORCA_LOGOUT_PATH = "/auth/v1/logout";
 constexpr const char* ENV_ORCA_API_URL = "ORCA_API_URL";
@@ -21,6 +26,30 @@ constexpr const char* ENV_ORCA_AUTH_URL = "ORCA_AUTH_URL";
 constexpr const char* ENV_ORCA_LEGACY_DEFAULT_URL = "ORCA_DEFAULT_BACKEND_URL";
 constexpr const char* ENV_ORCA_BACKEND_ANON_KEY = "ORCA_BACKEND_ANON_KEY";
 constexpr const char* ENV_BACKEND_OVERRIDE = "ORCA_BACKEND_URL";
+constexpr const char* ENV_ORCA_AUTH_ENABLED = "ORCA_AUTH_ENABLED";
+const std::chrono::seconds TOKEN_REFRESH_SKEW{90};
+
+bool env_flag_enabled(const char* value, bool default_val = true)
+{
+    if (!value) return default_val;
+    std::string lowered(value);
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), ::tolower);
+    if (lowered == "0" || lowered == "false" || lowered == "off") return false;
+    if (lowered == "1" || lowered == "true" || lowered == "on") return true;
+    return default_val;
+}
+
+std::map<std::string, std::string> strip_apikey(const std::map<std::string, std::string>& headers)
+{
+    std::map<std::string, std::string> sanitized;
+    for (const auto& pair : headers) {
+        std::string key = pair.first;
+        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+        if (key == "apikey") continue;
+        sanitized.insert(pair);
+    }
+    return sanitized;
+}
 }
 
 // ============================================================================
@@ -32,9 +61,12 @@ OrcaNetwork::OrcaNetwork(std::string log_dir)
     , api_base_url(ORCA_DEFAULT_API_URL)
     , auth_base_url(ORCA_DEFAULT_AUTH_URL)
     , is_connected(false)
+    , auth_lane_enabled(true)
     , enable_track(false)
     , multi_machine_enabled(false)
 {
+    auth_lane_enabled = env_flag_enabled(std::getenv(ENV_ORCA_AUTH_ENABLED), true);
+
     const char* override_url = std::getenv(ENV_BACKEND_OVERRIDE);
     const char* legacy_default = std::getenv(ENV_ORCA_LEGACY_DEFAULT_URL);
     const char* api_url = std::getenv(ENV_ORCA_API_URL);
@@ -54,14 +86,11 @@ OrcaNetwork::OrcaNetwork(std::string log_dir)
         auth_base_url = auth_url;
     }
 
-    if (const char* anon_key = std::getenv(ENV_ORCA_BACKEND_ANON_KEY)) {
-        if (*anon_key != '\0') {
-            auth_headers["apikey"] = anon_key;
-        } else {
-            BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: ORCA_BACKEND_ANON_KEY is empty; Supabase auth requests may fail";
-        }
+    const char* anon_key = std::getenv(ENV_ORCA_BACKEND_ANON_KEY);
+    if (anon_key && *anon_key) {
+        auth_headers["apikey"] = anon_key;
     } else {
-        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: ORCA_BACKEND_ANON_KEY not set; Supabase auth requests may fail";
+        auth_headers["apikey"] = ORCA_BACKEND_ANON_KEY;
     }
 
     auth_manager = std::make_unique<AuthManager>(auth_base_url);
@@ -70,6 +99,10 @@ OrcaNetwork::OrcaNetwork(std::string log_dir)
     auth_manager->set_session_handler([this](const std::string& payload) {
         return this->change_user(payload) == BAMBU_NETWORK_SUCCESS;
     });
+
+    if (!auth_lane_enabled) {
+        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Auth lane disabled via ORCA_AUTH_ENABLED flag";
+    }
 
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Constructor - log_dir=" << log_dir
                             << ", api_base_url=" << api_base_url
@@ -136,12 +169,13 @@ int OrcaNetwork::start()
 
     if (auth_manager) {
         auth_manager->regenerate_pkce();
-    }
-
-    // Attempt silent sign-in using stored refresh token
-    std::string stored_refresh;
-    if (auth_manager && auth_manager->load_refresh_token(stored_refresh)) {
-        auth_manager->try_refresh_async(stored_refresh);
+        if (auth_lane_enabled) {
+            // Attempt silent sign-in using stored refresh token
+            std::string stored_refresh;
+            if (auth_manager->load_refresh_token(stored_refresh)) {
+                auth_manager->try_refresh_async(stored_refresh);
+            }
+        }
     }
     return BAMBU_NETWORK_SUCCESS;
 }
@@ -348,7 +382,7 @@ int OrcaNetwork::set_user_session(std::string token, std::string user_id, std::s
 
 int OrcaNetwork::change_user(std::string user_info)
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: change_user - user_info=" << user_info;
+    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: change_user invoked";
 
     try {
         // Parse user_info JSON
@@ -380,6 +414,16 @@ int OrcaNetwork::change_user(std::string user_info)
             std::string nickname = read_str(data, "nickname");
             std::string avatar = read_str(data, "avatar");
             std::string refresh_token = read_str(data, "refresh_token");
+            std::string state = read_str(data, "state");
+
+            if (auth_lane_enabled && auth_manager) {
+                const auto expected_state = auth_manager->pkce().state;
+                if (!expected_state.empty() && state != expected_state) {
+                    BOOST_LOG_TRIVIAL(warning) << "[auth] event=login result=failure reason=state_mismatch";
+                    invoke_user_login_callback(0, false);
+                    return BAMBU_NETWORK_ERR_INVALID_HANDLE;
+                }
+            }
 
             if (token.empty() || user_id.empty()) {
                 BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: WebView login - token or user_id empty";
@@ -387,7 +431,10 @@ int OrcaNetwork::change_user(std::string user_info)
                 return BAMBU_NETWORK_ERR_INVALID_HANDLE;
             }
 
-            return set_user_session(token, user_id, username, name, nickname, avatar, refresh_token);
+            auto rc = set_user_session(token, user_id, username, name, nickname, avatar, refresh_token);
+            BOOST_LOG_TRIVIAL(info) << "[auth] event=login result=" << (rc == BAMBU_NETWORK_SUCCESS ? "success" : "failure")
+                                    << " source=webview user_id=" << user_id;
+            return rc;
         }
 
         // Orca cloud session payload (default flow). Accept either data.* or top-level keys.
@@ -434,7 +481,10 @@ int OrcaNetwork::change_user(std::string user_info)
             }
 
             BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Orca cloud login successful - user_id=" << user_id;
-            return set_user_session(access_token, user_id, username, name, nickname, avatar, refresh_token);
+            auto rc = set_user_session(access_token, user_id, username, name, nickname, avatar, refresh_token);
+            BOOST_LOG_TRIVIAL(info) << "[auth] event=login result=" << (rc == BAMBU_NETWORK_SUCCESS ? "success" : "failure")
+                                    << " source=session user_id=" << user_id;
+            return rc;
         }
 
         // Legacy username/password flow is no longer the default; instruct callers to use Orca cloud PKCE.
@@ -497,6 +547,8 @@ int OrcaNetwork::user_logout(bool request)
     // Invoke callback
     invoke_user_login_callback(0, false);
 
+    BOOST_LOG_TRIVIAL(info) << "[auth] event=logout result=success request=" << request;
+
     return BAMBU_NETWORK_SUCCESS;
 }
 
@@ -530,7 +582,38 @@ std::string OrcaNetwork::build_login_cmd()
         BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: auth_manager is null in build_login_cmd (fatal)";
         return "{}";
     }
-    return auth_manager->build_login_cmd();
+
+    // Build login configuration JSON for WebView
+    // WebView handles provider selection (password, Google, Apple, GitHub) internally
+    const auto& pkce = auth_manager->pkce();
+
+    pt::ptree cmd;
+    cmd.put("action", "login_config");
+    cmd.put("backend_url", auth_base_url);
+
+    // Include API key for direct Supabase calls from JavaScript
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex);
+        auto it = auth_headers.find("apikey");
+        if (it != auth_headers.end()) {
+            cmd.put("apikey", it->second);
+        }
+    }
+
+    // PKCE parameters for OAuth flows
+    pt::ptree pkce_node;
+    pkce_node.put("code_challenge", pkce.challenge);
+    pkce_node.put("code_challenge_method", "S256");
+    pkce_node.put("state", pkce.state);
+    pkce_node.put("redirect_uri", pkce.redirect);
+    pkce_node.put("code_verifier", pkce.verifier);
+    pkce_node.put("loopback_port", pkce.loopback_port);
+
+    cmd.add_child("pkce", pkce_node);
+
+    std::stringstream ss;
+    pt::write_json(ss, cmd, false);
+    return ss.str();
 }
 
 std::string OrcaNetwork::build_logout_cmd()
@@ -852,11 +935,18 @@ int OrcaNetwork::set_extra_http_header(std::map<std::string, std::string> extra_
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: set_extra_http_header - count=" << extra_headers.size();
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
-    this->extra_headers = extra_headers;
-    auto api_key_it = this->extra_headers.find("apikey");
-    if (api_key_it != this->extra_headers.end()) {
-        auth_headers["apikey"] = api_key_it->second;
+    this->extra_headers.clear();
+
+    for (const auto& pair : extra_headers) {
+        std::string key_lower = pair.first;
+        std::transform(key_lower.begin(), key_lower.end(), key_lower.begin(), ::tolower);
+        if (key_lower == "apikey") {
+            auth_headers["apikey"] = pair.second;
+            continue;
+        }
+        this->extra_headers.insert(pair);
     }
+
     if (auth_manager) {
         auth_manager->set_extra_headers(auth_headers);
     }
@@ -872,69 +962,102 @@ std::string OrcaNetwork::get_studio_info_url()
 // HTTP Request Helpers
 // ============================================================================
 
+std::map<std::string, std::string> OrcaNetwork::data_headers()
+{
+    std::lock_guard<std::recursive_mutex> lock(state_mutex);
+    return strip_apikey(extra_headers);
+}
+
+bool OrcaNetwork::ensure_token_fresh(const std::string& reason)
+{
+    if (!auth_lane_enabled || !auth_manager) return true;
+    return auth_manager->refresh_if_expiring(TOKEN_REFRESH_SKEW, reason);
+}
+
+bool OrcaNetwork::attempt_refresh_after_unauthorized(const std::string& reason)
+{
+    if (!auth_lane_enabled || !auth_manager) return false;
+    if (auth_manager->refresh_from_storage(reason, false)) return true;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    if (auth_manager->refresh_from_storage(reason + "_retry", false)) return true;
+
+    BOOST_LOG_TRIVIAL(warning) << "[auth] event=refresh result=failure source=" << reason << " action=logout";
+    auth_manager->clear_session();
+    invoke_user_login_callback(0, false);
+    return false;
+}
+
 int OrcaNetwork::http_get(const std::string& path, std::string* response_body, unsigned int* http_code)
 {
     std::string url = api_base_url + path;
     BOOST_LOG_TRIVIAL(trace) << "OrcaNetwork: GET " << url;
     const bool disable_cache = path.find("/sync") != std::string::npos;
 
-    try {
-        auto http = Http::get(url);
+    ensure_token_fresh(std::string("http_get_pre") + path);
 
-        std::string token;
-        if (auth_manager) {
-            token = auth_manager->get_access_token();
-        }
-
-        std::map<std::string, std::string> headers_copy;
-        {
-            std::lock_guard<std::recursive_mutex> lock(state_mutex);
-            headers_copy = extra_headers;
-        }
-
-        if (!token.empty()) {
-            http.header("Authorization", "Bearer " + token);
-        }
-        for (const auto& pair : headers_copy) {
-            http.header(pair.first, pair.second);
-        }
-        if (disable_cache) {
-            http.header("Cache-Control", "no-store");
-        }
-
-        bool success = false;
-        unsigned int status = 0;
+    struct HttpResult {
+        bool success{false};
+        unsigned int status{0};
         std::string body;
+    };
 
-        http.on_complete([&](std::string resp_body, unsigned resp_status) {
-            success = true;
-            status = resp_status;
-            body = resp_body;
-        })
-        .on_error([&](std::string resp_body, std::string error, unsigned resp_status) {
-            success = false;
-            status = resp_status;
-            body = resp_body;
-            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: HTTP error - " << error;
-        })
-        .timeout_max(30) // 30 second timeout
-        .perform_sync();
+    auto perform = [&]() {
+        HttpResult result;
+        try {
+            auto http = Http::get(url);
 
-        if (response_body) *response_body = body;
-        if (http_code) *http_code = status;
+            std::string token;
+            if (auth_manager) {
+                token = auth_manager->get_access_token();
+            }
 
-        if (success && status >= 200 && status < 300) {
-            return BAMBU_NETWORK_SUCCESS;
-        } else {
-            invoke_http_error_callback(status, body);
-            return BAMBU_NETWORK_ERR_CONNECT_FAILED;
+            auto headers_copy = data_headers();
+
+            if (!token.empty()) {
+                http.header("Authorization", "Bearer " + token);
+            }
+            for (const auto& pair : headers_copy) {
+                http.header(pair.first, pair.second);
+            }
+            if (disable_cache) {
+                http.header("Cache-Control", "no-store");
+            }
+
+            http.on_complete([&](std::string resp_body, unsigned resp_status) {
+                result.success = true;
+                result.status = resp_status;
+                result.body = resp_body;
+            })
+            .on_error([&](std::string resp_body, std::string error, unsigned resp_status) {
+                result.success = false;
+                result.status = resp_status;
+                result.body = resp_body;
+                BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: HTTP error - " << error;
+            })
+            .timeout_max(30) // 30 second timeout
+            .perform_sync();
+
+        } catch (const std::exception& e) {
+            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: http_get exception - " << e.what();
         }
+        return result;
+    };
 
-    } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: http_get exception - " << e.what();
-        if (http_code) *http_code = 0;
-        return BAMBU_NETWORK_ERR_CONNECT_FAILED;
+    HttpResult res = perform();
+    if (res.status == 401 && attempt_refresh_after_unauthorized("http_get_401")) {
+        res = perform();
     }
+
+    if (response_body) *response_body = res.body;
+    if (http_code) *http_code = res.status;
+
+    if (res.success && res.status >= 200 && res.status < 300) {
+        return BAMBU_NETWORK_SUCCESS;
+    }
+
+    invoke_http_error_callback(res.status, res.body);
+    return BAMBU_NETWORK_ERR_CONNECT_FAILED;
 }
 
 int OrcaNetwork::http_post(const std::string& path, const std::string& body, std::string* response_body, unsigned int* http_code)
@@ -942,64 +1065,71 @@ int OrcaNetwork::http_post(const std::string& path, const std::string& body, std
     std::string url = api_base_url + path;
     BOOST_LOG_TRIVIAL(trace) << "OrcaNetwork: POST " << url;
 
-    try {
-        auto http = Http::post(url);
+    ensure_token_fresh(std::string("http_post_pre") + path);
 
-        std::string token;
-        if (auth_manager && path != ORCA_TOKEN_PATH) {
-            token = auth_manager->get_access_token();
+    struct HttpResult {
+        bool success{false};
+        unsigned int status{0};
+        std::string body;
+    };
+
+    auto perform = [&]() {
+        HttpResult result;
+        try {
+            auto http = Http::post(url);
+
+            std::string token;
+            if (auth_manager && path != ORCA_TOKEN_PATH) {
+                token = auth_manager->get_access_token();
+            }
+
+            auto headers_copy = data_headers();
+
+            if (!token.empty()) {
+                http.header("Authorization", "Bearer " + token);
+            }
+
+            for (const auto& pair : headers_copy) {
+                http.header(pair.first, pair.second);
+            }
+
+            http.header("Content-Type", "application/json");
+            http.set_post_body(body);
+
+            http.on_complete([&](std::string b, unsigned resp_status) {
+                result.success = true;
+                result.status = resp_status;
+                result.body = b;
+            })
+            .on_error([&](std::string b, std::string error, unsigned resp_status) {
+                result.success = false;
+                result.status = resp_status;
+                result.body = b;
+                BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: HTTP error - " << error;
+            })
+            .timeout_max(30)
+            .perform_sync();
+
+        } catch (const std::exception& e) {
+            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: http_post exception - " << e.what();
         }
+        return result;
+    };
 
-        std::map<std::string, std::string> headers_copy;
-        {
-            std::lock_guard<std::recursive_mutex> lock(state_mutex);
-            headers_copy = extra_headers;
-        }
-
-        if (!token.empty()) {
-            http.header("Authorization", "Bearer " + token);
-        }
-
-        for (const auto& pair : headers_copy) {
-            http.header(pair.first, pair.second);
-        }
-
-        http.header("Content-Type", "application/json");
-        http.set_post_body(body);
-
-        bool success = false;
-        unsigned int status = 0;
-        std::string resp_body;
-
-        http.on_complete([&](std::string body, unsigned resp_status) {
-            success = true;
-            status = resp_status;
-            resp_body = body;
-        })
-        .on_error([&](std::string body, std::string error, unsigned resp_status) {
-            success = false;
-            status = resp_status;
-            resp_body = body;
-            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: HTTP error - " << error;
-        })
-        .timeout_max(30)
-        .perform_sync();
-
-        if (response_body) *response_body = resp_body;
-        if (http_code) *http_code = status;
-
-        if (success && status >= 200 && status < 300) {
-            return BAMBU_NETWORK_SUCCESS;
-        } else {
-            invoke_http_error_callback(status, resp_body);
-            return BAMBU_NETWORK_ERR_CONNECT_FAILED;
-        }
-
-    } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: http_post exception - " << e.what();
-        if (http_code) *http_code = 0;
-        return BAMBU_NETWORK_ERR_CONNECT_FAILED;
+    HttpResult res = perform();
+    if (res.status == 401 && attempt_refresh_after_unauthorized("http_post_401")) {
+        res = perform();
     }
+
+    if (response_body) *response_body = res.body;
+    if (http_code) *http_code = res.status;
+
+    if (res.success && res.status >= 200 && res.status < 300) {
+        return BAMBU_NETWORK_SUCCESS;
+    }
+
+    invoke_http_error_callback(res.status, res.body);
+    return BAMBU_NETWORK_ERR_CONNECT_FAILED;
 }
 
 int OrcaNetwork::http_post_auth(const std::string& path, const std::string& body, std::string* response_body, unsigned int* http_code)
@@ -1072,64 +1202,71 @@ int OrcaNetwork::http_put(const std::string& path, const std::string& body, std:
     std::string url = api_base_url + path;
     BOOST_LOG_TRIVIAL(trace) << "OrcaNetwork: PUT " << url;
 
-    try {
-        auto http = Http::put(url);
+    ensure_token_fresh(std::string("http_put_pre") + path);
 
-        std::string token;
-        if (auth_manager) {
-            token = auth_manager->get_access_token();
+    struct HttpResult {
+        bool success{false};
+        unsigned int status{0};
+        std::string body;
+    };
+
+    auto perform = [&]() {
+        HttpResult result;
+        try {
+            auto http = Http::put(url);
+
+            std::string token;
+            if (auth_manager) {
+                token = auth_manager->get_access_token();
+            }
+
+            auto headers_copy = data_headers();
+
+            if (!token.empty()) {
+                http.header("Authorization", "Bearer " + token);
+            }
+
+            for (const auto& pair : headers_copy) {
+                http.header(pair.first, pair.second);
+            }
+
+            http.header("Content-Type", "application/json");
+            http.set_post_body(body); // Note: set_post_body works for PUT too
+
+            http.on_complete([&](std::string b, unsigned resp_status) {
+                result.success = true;
+                result.status = resp_status;
+                result.body = b;
+            })
+            .on_error([&](std::string b, std::string error, unsigned resp_status) {
+                result.success = false;
+                result.status = resp_status;
+                result.body = b;
+                BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: HTTP error - " << error;
+            })
+            .timeout_max(30)
+            .perform_sync();
+
+        } catch (const std::exception& e) {
+            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: http_put exception - " << e.what();
         }
+        return result;
+    };
 
-        std::map<std::string, std::string> headers_copy;
-        {
-            std::lock_guard<std::recursive_mutex> lock(state_mutex);
-            headers_copy = extra_headers;
-        }
-
-        if (!token.empty()) {
-            http.header("Authorization", "Bearer " + token);
-        }
-
-        for (const auto& pair : headers_copy) {
-            http.header(pair.first, pair.second);
-        }
-
-        http.header("Content-Type", "application/json");
-        http.set_post_body(body); // Note: set_post_body works for PUT too
-
-        bool success = false;
-        unsigned int status = 0;
-        std::string resp_body;
-
-        http.on_complete([&](std::string body, unsigned resp_status) {
-            success = true;
-            status = resp_status;
-            resp_body = body;
-        })
-        .on_error([&](std::string body, std::string error, unsigned resp_status) {
-            success = false;
-            status = resp_status;
-            resp_body = body;
-            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: HTTP error - " << error;
-        })
-        .timeout_max(30)
-        .perform_sync();
-
-        if (response_body) *response_body = resp_body;
-        if (http_code) *http_code = status;
-
-        if (success && status >= 200 && status < 300) {
-            return BAMBU_NETWORK_SUCCESS;
-        } else {
-            invoke_http_error_callback(status, resp_body);
-            return BAMBU_NETWORK_ERR_CONNECT_FAILED;
-        }
-
-    } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: http_put exception - " << e.what();
-        if (http_code) *http_code = 0;
-        return BAMBU_NETWORK_ERR_CONNECT_FAILED;
+    HttpResult res = perform();
+    if (res.status == 401 && attempt_refresh_after_unauthorized("http_put_401")) {
+        res = perform();
     }
+
+    if (response_body) *response_body = res.body;
+    if (http_code) *http_code = res.status;
+
+    if (res.success && res.status >= 200 && res.status < 300) {
+        return BAMBU_NETWORK_SUCCESS;
+    }
+
+    invoke_http_error_callback(res.status, res.body);
+    return BAMBU_NETWORK_ERR_CONNECT_FAILED;
 }
 
 int OrcaNetwork::http_delete(const std::string& path, std::string* response_body, unsigned int* http_code)
@@ -1137,61 +1274,68 @@ int OrcaNetwork::http_delete(const std::string& path, std::string* response_body
     std::string url = api_base_url + path;
     BOOST_LOG_TRIVIAL(trace) << "OrcaNetwork: DELETE " << url;
 
-    try {
-        auto http = Http::del(url);
+    ensure_token_fresh(std::string("http_delete_pre") + path);
 
-        std::string token;
-        if (auth_manager) {
-            token = auth_manager->get_access_token();
+    struct HttpResult {
+        bool success{false};
+        unsigned int status{0};
+        std::string body;
+    };
+
+    auto perform = [&]() {
+        HttpResult result;
+        try {
+            auto http = Http::del(url);
+
+            std::string token;
+            if (auth_manager) {
+                token = auth_manager->get_access_token();
+            }
+
+            auto headers_copy = data_headers();
+
+            if (!token.empty()) {
+                http.header("Authorization", "Bearer " + token);
+            }
+
+            for (const auto& pair : headers_copy) {
+                http.header(pair.first, pair.second);
+            }
+
+            http.on_complete([&](std::string b, unsigned resp_status) {
+                result.success = true;
+                result.status = resp_status;
+                result.body = b;
+            })
+            .on_error([&](std::string b, std::string error, unsigned resp_status) {
+                result.success = false;
+                result.status = resp_status;
+                result.body = b;
+                BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: HTTP error - " << error;
+            })
+            .timeout_max(30)
+            .perform_sync();
+
+        } catch (const std::exception& e) {
+            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: http_delete exception - " << e.what();
         }
+        return result;
+    };
 
-        std::map<std::string, std::string> headers_copy;
-        {
-            std::lock_guard<std::recursive_mutex> lock(state_mutex);
-            headers_copy = extra_headers;
-        }
-
-        if (!token.empty()) {
-            http.header("Authorization", "Bearer " + token);
-        }
-
-        for (const auto& pair : headers_copy) {
-            http.header(pair.first, pair.second);
-        }
-
-        bool success = false;
-        unsigned int status = 0;
-        std::string resp_body;
-
-        http.on_complete([&](std::string body, unsigned resp_status) {
-            success = true;
-            status = resp_status;
-            resp_body = body;
-        })
-        .on_error([&](std::string body, std::string error, unsigned resp_status) {
-            success = false;
-            status = resp_status;
-            resp_body = body;
-            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: HTTP error - " << error;
-        })
-        .timeout_max(30)
-        .perform_sync();
-
-        if (response_body) *response_body = resp_body;
-        if (http_code) *http_code = status;
-
-        if (success && status >= 200 && status < 300) {
-            return BAMBU_NETWORK_SUCCESS;
-        } else {
-            invoke_http_error_callback(status, resp_body);
-            return BAMBU_NETWORK_ERR_CONNECT_FAILED;
-        }
-
-    } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: http_delete exception - " << e.what();
-        if (http_code) *http_code = 0;
-        return BAMBU_NETWORK_ERR_CONNECT_FAILED;
+    HttpResult res = perform();
+    if (res.status == 401 && attempt_refresh_after_unauthorized("http_delete_401")) {
+        res = perform();
     }
+
+    if (response_body) *response_body = res.body;
+    if (http_code) *http_code = res.status;
+
+    if (res.success && res.status >= 200 && res.status < 300) {
+        return BAMBU_NETWORK_SUCCESS;
+    }
+
+    invoke_http_error_callback(res.status, res.body);
+    return BAMBU_NETWORK_ERR_CONNECT_FAILED;
 }
 
 // ============================================================================

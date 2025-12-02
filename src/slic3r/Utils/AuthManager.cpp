@@ -3,16 +3,19 @@
 #include "slic3r/Utils/InstanceID.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 
+#include <boost/asio.hpp>
 #include <boost/beast/core/detail/base64.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
 
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
@@ -139,6 +142,68 @@ std::vector<unsigned char> sha256_bytes(const std::string& input)
     return out;
 }
 
+std::string hmac_sha256_hex(const std::string& data, const std::vector<unsigned char>& key)
+{
+    unsigned int len = 0;
+    unsigned char result[EVP_MAX_MD_SIZE];
+    if (HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()),
+             reinterpret_cast<const unsigned char*>(data.data()), data.size(), result, &len) == nullptr) {
+        return {};
+    }
+
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (unsigned int i = 0; i < len; ++i) {
+        oss << std::setw(2) << static_cast<int>(result[i]);
+    }
+    return oss.str();
+}
+
+bool is_port_available(int port)
+{
+    if (port <= 0 || port > 65535) return false;
+
+    using boost::asio::ip::tcp;
+    boost::asio::io_context ctx;
+    boost::system::error_code ec;
+
+    tcp::acceptor acceptor(ctx);
+    tcp::endpoint endpoint(tcp::v4(), static_cast<unsigned short>(port));
+
+    acceptor.open(endpoint.protocol(), ec);
+    if (ec) return false;
+    acceptor.set_option(tcp::acceptor::reuse_address(true), ec);
+    if (ec) return false;
+    acceptor.bind(endpoint, ec);
+    if (ec) return false;
+    acceptor.close(ec);
+    return true;
+}
+
+int choose_loopback_port()
+{
+    int base_port = ORCA_LOOPBACK_PORT;
+
+    if (const char* env_port = std::getenv("ORCA_LOOPBACK_PORT")) {
+        try {
+            int parsed = std::stoi(env_port);
+            if (parsed > 0 && parsed <= 65535) {
+                base_port = parsed;
+            }
+        } catch (...) {
+            BOOST_LOG_TRIVIAL(warning) << "AuthManager: invalid ORCA_LOOPBACK_PORT value, falling back to default";
+        }
+    }
+
+    std::vector<int> candidates = {base_port, base_port + 1, base_port + 2};
+    for (int port : candidates) {
+        if (is_port_available(port)) return port;
+    }
+
+    // None of the ports were free; stick with the base port to preserve backward compatibility.
+    return base_port;
+}
+
 bool aes256gcm_encrypt(const std::string& plaintext, const std::vector<unsigned char>& key, std::string& out_b64)
 {
     const int iv_len = 12;
@@ -217,7 +282,8 @@ bool aes256gcm_decrypt(const std::string& b64_payload, const std::vector<unsigne
 AuthManager::AuthManager(std::string auth_base_url)
     : auth_base_url(std::move(auth_base_url))
 {
-    pkce_bundle.redirect = "http://localhost:" + std::to_string(ORCA_LOOPBACK_PORT) + ORCA_LOOPBACK_PATH;
+    pkce_bundle.loopback_port = choose_loopback_port();
+    update_redirect_uri();
     regenerate_pkce();
     ensure_secret_store();
     compute_fallback_path();
@@ -267,13 +333,14 @@ void AuthManager::regenerate_pkce()
     pkce_bundle.challenge = sha256_base64url(pkce_bundle.verifier);
     pkce_bundle.state = generate_state_token();
     if (pkce_bundle.redirect.empty()) {
-        pkce_bundle.redirect = "http://localhost:" + std::to_string(ORCA_LOOPBACK_PORT) + ORCA_LOOPBACK_PATH;
+        pkce_bundle.redirect = "http://localhost:" + std::to_string(pkce_bundle.loopback_port) + ORCA_LOOPBACK_PATH;
     }
     BOOST_LOG_TRIVIAL(debug) << "AuthManager: regenerated PKCE bundle";
 }
 
 std::string AuthManager::build_login_cmd()
 {
+    update_redirect_uri();
     regenerate_pkce();
     const auto bundle = pkce();
 
@@ -294,6 +361,16 @@ std::string AuthManager::build_login_cmd()
     std::stringstream ss;
     pt::write_json(ss, tree);
     return ss.str();
+}
+
+void AuthManager::update_redirect_uri()
+{
+    int selected_port = choose_loopback_port();
+    if (selected_port != pkce_bundle.loopback_port) {
+        BOOST_LOG_TRIVIAL(info) << "AuthManager: loopback port changed to " << selected_port;
+    }
+    pkce_bundle.loopback_port = selected_port;
+    pkce_bundle.redirect = "http://localhost:" + std::to_string(selected_port) + ORCA_LOOPBACK_PATH;
 }
 
 std::string AuthManager::build_logout_cmd()
@@ -338,6 +415,11 @@ void AuthManager::persist_refresh_token(const std::string& token)
             return;
         }
 
+        std::string signed_payload = payload;
+        if (auto mac = hmac_sha256_hex(payload, key); !mac.empty()) {
+            signed_payload = "v2:" + mac + ":" + payload;
+        }
+
         compute_fallback_path();
         wxFileName path(wxString::FromUTF8(refresh_fallback_path.c_str()));
         path.Normalize();
@@ -345,11 +427,19 @@ void AuthManager::persist_refresh_token(const std::string& token)
             wxFileName::Mkdir(path.GetPath(), wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL);
         }
 
-        std::ofstream ofs(refresh_fallback_path, std::ios::out | std::ios::trunc | std::ios::binary);
+        const std::string tmp_path = refresh_fallback_path + ".tmp";
+        std::ofstream ofs(tmp_path, std::ios::out | std::ios::trunc | std::ios::binary);
         if (ofs.good()) {
-            ofs << payload;
+            ofs << signed_payload;
+            ofs.flush();
             ofs.close();
-            stored = true;
+
+            if (wxRenameFile(wxString::FromUTF8(tmp_path.c_str()), wxString::FromUTF8(refresh_fallback_path.c_str()), true)) {
+                stored = true;
+            } else {
+                wxRemoveFile(wxString::FromUTF8(tmp_path.c_str()));
+                BOOST_LOG_TRIVIAL(warning) << "AuthManager: failed to atomically replace refresh-token fallback file";
+            }
         } else {
             BOOST_LOG_TRIVIAL(warning) << "AuthManager: cannot open fallback refresh-token path for write - " << refresh_fallback_path;
         }
@@ -383,10 +473,39 @@ bool AuthManager::load_refresh_token(std::string& out_token)
         std::string payload((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
         auto key = sha256_bytes(machine_identifier());
         std::string plain;
-        if (!key.empty() && aes256gcm_decrypt(payload, key, plain) && !plain.empty()) {
-            out_token = plain;
-            BOOST_LOG_TRIVIAL(info) << "AuthManager: loaded refresh token from encrypted fallback";
-            return true;
+        if (!key.empty()) {
+            std::string encoded_payload = payload;
+            bool integrity_ok = true;
+
+            if (payload.rfind("v2:", 0) == 0) {
+                auto delim = payload.find(':', 3);
+                if (delim == std::string::npos) {
+                    integrity_ok = false;
+                } else {
+                    std::string stored_hmac = payload.substr(3, delim - 3);
+                    std::string lower_stored = stored_hmac;
+                    std::transform(lower_stored.begin(), lower_stored.end(), lower_stored.begin(), ::tolower);
+                    encoded_payload = payload.substr(delim + 1);
+
+                    std::string computed_hmac = hmac_sha256_hex(encoded_payload, key);
+                    std::transform(computed_hmac.begin(), computed_hmac.end(), computed_hmac.begin(), ::tolower);
+                    if (computed_hmac.empty() || computed_hmac != lower_stored) {
+                        integrity_ok = false;
+                        BOOST_LOG_TRIVIAL(warning) << "AuthManager: refresh token integrity check failed (HMAC mismatch)";
+                    }
+                }
+            }
+
+            if (integrity_ok && aes256gcm_decrypt(encoded_payload, key, plain) && !plain.empty()) {
+                out_token = plain;
+                BOOST_LOG_TRIVIAL(info) << "AuthManager: loaded refresh token from encrypted fallback";
+
+                // Upgrade legacy payloads to signed format for next run
+                if (payload.rfind("v2:", 0) != 0) {
+                    persist_refresh_token(out_token);
+                }
+                return true;
+            }
         }
     }
 
@@ -406,26 +525,112 @@ void AuthManager::clear_refresh_token()
     }
 }
 
-void AuthManager::try_refresh_async(const std::string& refresh_token)
+bool AuthManager::should_refresh_locked(std::chrono::seconds skew) const
 {
-    if (refresh_token.empty()) return;
+    if (!session.logged_in) return false;
+    if (session.expires_at.time_since_epoch().count() == 0) return true; // unknown expiry, err on refresh
+
+    auto now = std::chrono::system_clock::now();
+    return (session.expires_at - now) <= skew;
+}
+
+bool AuthManager::decode_jwt_expiry(const std::string& token, std::chrono::system_clock::time_point& out_tp)
+{
+    out_tp = {};
+    if (token.empty()) return false;
+
+    auto first = token.find('.');
+    auto second = token.find('.', first == std::string::npos ? 0 : first + 1);
+    if (first == std::string::npos || second == std::string::npos) return false;
+
+    std::string payload_b64 = token.substr(first + 1, second - first - 1);
+    std::vector<unsigned char> payload_bytes;
+    if (!base64url_decode(payload_b64, payload_bytes)) return false;
+
+    std::string payload_str(payload_bytes.begin(), payload_bytes.end());
+    try {
+        pt::ptree payload;
+        std::stringstream ss(payload_str);
+        pt::read_json(ss, payload);
+        auto exp_opt = payload.get_optional<long long>("exp");
+        if (exp_opt) {
+            out_tp = std::chrono::system_clock::time_point{std::chrono::seconds(*exp_opt)};
+            return true;
+        }
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(debug) << "AuthManager: failed to decode JWT exp - " << e.what();
+    }
+    return false;
+}
+
+bool AuthManager::refresh_now(const std::string& refresh_token, const std::string& reason, bool async)
+{
+    if (refresh_token.empty()) return false;
 
     bool expected = false;
     if (!refresh_running.compare_exchange_strong(expected, true)) {
-        BOOST_LOG_TRIVIAL(debug) << "AuthManager: refresh already running, skip";
-        return;
+        BOOST_LOG_TRIVIAL(debug) << "AuthManager: refresh already running, skip (reason=" << reason << ")";
+        return false;
     }
 
-    if (refresh_thread.joinable()) {
-        refresh_thread.join();
-    }
-
-    refresh_thread = std::thread([this, refresh_token]() {
-        if (!refresh_session_with_token(refresh_token)) {
-            BOOST_LOG_TRIVIAL(warning) << "AuthManager: refresh_token exchange failed";
+    auto worker = [this, refresh_token, reason]() {
+        const std::string req_id = generate_state_token();
+        BOOST_LOG_TRIVIAL(info) << "[auth] event=refresh_start source=" << reason << " rid=" << req_id;
+        bool ok = refresh_session_with_token(refresh_token);
+        if (ok) {
+            BOOST_LOG_TRIVIAL(info) << "[auth] event=refresh_complete result=success source=" << reason << " rid=" << req_id;
+        } else {
+            BOOST_LOG_TRIVIAL(warning) << "[auth] event=refresh_complete result=failure source=" << reason << " rid=" << req_id;
         }
         refresh_running.store(false);
-    });
+        return ok;
+    };
+
+    if (async) {
+        if (refresh_thread.joinable()) {
+            refresh_thread.join();
+        }
+        refresh_thread = std::thread([worker]() { worker(); });
+        return true;
+    }
+
+    return worker();
+}
+
+bool AuthManager::refresh_from_storage(const std::string& reason, bool async)
+{
+    std::string refresh_token = get_refresh_token();
+    if (refresh_token.empty()) {
+        load_refresh_token(refresh_token);
+    }
+    if (refresh_token.empty()) {
+        BOOST_LOG_TRIVIAL(warning) << "AuthManager: no refresh token available for refresh (reason=" << reason << ")";
+        return false;
+    }
+
+    return refresh_now(refresh_token, reason, async);
+}
+
+bool AuthManager::refresh_if_expiring(std::chrono::seconds skew, const std::string& reason)
+{
+    bool needs_refresh = false;
+    {
+        std::lock_guard<std::mutex> lock(session_mutex);
+        needs_refresh = should_refresh_locked(skew);
+    }
+
+    if (!needs_refresh) return true;
+
+    // simple backoff: try immediately, then once more after 750ms on failure
+    if (refresh_from_storage(reason, false)) return true;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(750));
+    return refresh_from_storage(reason + "_retry", false);
+}
+
+void AuthManager::try_refresh_async(const std::string& refresh_token)
+{
+    refresh_now(refresh_token, "async_refresh", true);
 }
 
 bool AuthManager::refresh_session_with_token(const std::string& refresh_token)
@@ -527,6 +732,9 @@ bool AuthManager::set_user_session(const std::string& token,
                                    const std::string& avatar,
                                    const std::string& refresh_token)
 {
+    std::chrono::system_clock::time_point exp_tp{};
+    decode_jwt_expiry(token, exp_tp);
+
     {
         std::lock_guard<std::mutex> lock(session_mutex);
         session.access_token = token;
@@ -535,6 +743,7 @@ bool AuthManager::set_user_session(const std::string& token,
         session.user_name = name.empty() ? username : name;
         session.user_nickname = nickname.empty() ? (!username.empty() ? username : name) : nickname;
         session.user_avatar = avatar;
+        session.expires_at = exp_tp;
         session.logged_in = true;
     }
 

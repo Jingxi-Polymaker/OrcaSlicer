@@ -2,11 +2,13 @@
 #define __AUTH_MANAGER_HPP__
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 class wxSecretStore;
@@ -26,6 +28,7 @@ public:
         std::string user_name;
         std::string user_nickname;
         std::string user_avatar;
+        std::chrono::system_clock::time_point expires_at{};
         bool logged_in = false;
     };
 
@@ -54,6 +57,11 @@ public:
     bool load_refresh_token(std::string& out_token);
     void clear_refresh_token();
 
+    // Token refresh helpers
+    bool refresh_if_expiring(std::chrono::seconds skew, const std::string& reason);
+    bool refresh_from_storage(const std::string& reason, bool async = false);
+    bool refresh_now(const std::string& refresh_token, const std::string& reason, bool async = false);
+
     void try_refresh_async(const std::string& refresh_token);
     bool refresh_session_with_token(const std::string& refresh_token);
 
@@ -81,8 +89,11 @@ public:
 
 private:
     bool http_post_token(const std::string& body, std::string* response_body, unsigned int* http_code);
+    void update_redirect_uri();
     void ensure_secret_store();
     void compute_fallback_path();
+    bool decode_jwt_expiry(const std::string& token, std::chrono::system_clock::time_point& out_tp);
+    bool should_refresh_locked(std::chrono::seconds skew) const;
 
     std::string auth_base_url;
     std::string api_base_url;

@@ -175,6 +175,9 @@ private:
     int http_put(const std::string& path, const std::string& body, std::string* response_body, unsigned int* http_code);
     int http_delete(const std::string& path, std::string* response_body, unsigned int* http_code);
     int http_post_auth(const std::string& path, const std::string& body, std::string* response_body, unsigned int* http_code);
+    std::map<std::string, std::string> data_headers();
+    bool ensure_token_fresh(const std::string& reason);
+    bool attempt_refresh_after_unauthorized(const std::string& reason);
 
     // Callback invocation helpers (thread-safe via queue_on_main)
     void invoke_user_login_callback(int online_login, bool login);
@@ -198,6 +201,7 @@ private:
 
     // Member variables - state
     bool is_connected;
+    bool auth_lane_enabled;
     bool enable_track;
     bool multi_machine_enabled;
     std::string selected_machine;

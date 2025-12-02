@@ -107,13 +107,16 @@ The JS/UI layer builds the Supabase authorize URL with these fields and opens th
 6) **Silent sign-in / refresh**: On startup, OrcaNetwork loads the stored refresh token and exchanges it at `/auth/v1/token` (grant_type=refresh_token). If successful, it repopulates the session and fires the login callback.
 7) **Bearer usage**: All API calls attach `Authorization: Bearer <access_token>` automatically; the token endpoint intentionally omits Authorization to allow refresh.
 
+- Loopback redirect: the listener chooses `ORCA_LOOPBACK_PORT` if set (default 41172) and falls back to 41173/41174 when busy; the callback returns a friendly HTML page and auto-closes the browser tab.
+
 **Session Management Notes:**
 - Logout clears memory, deletes secure storage, and optionally POSTs `/auth/v1/logout` with the refresh token.
 - PKCE material is regenerated lazily but kept per-process to avoid cross-login mixing.
 - Anon key usage is **scoped to auth only**: the `apikey` from `ORCA_BACKEND_ANON_KEY`
-  must be sent with Supabase `/auth/v1/*` calls, but **must not** be forwarded to the
-  API gateway (`api.orcaslicer.com`). The current code injects the key globally; this
-  will be narrowed to auth endpoints in a follow-up change.
+  is attached exclusively to Supabase `/auth/v1/*` calls, and is stripped from all data-lane
+  traffic to `api.orcaslicer.com`.
+- Access tokens are auto-refreshed shortly before expiry and retried once on HTTP 401 with a brief backoff; refresh failures clear the session and notify the UI.
+- Set `ORCA_AUTH_ENABLED=0` to temporarily disable the auth lane (skips silent refresh/PKCE auto-login) when debugging.
 
 ### 2. Settings Sync
 

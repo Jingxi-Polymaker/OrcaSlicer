@@ -249,7 +249,17 @@ void HttpServer::ResponseNotFound::write_response(std::stringstream& ssOut)
 
 void HttpServer::ResponseRedirect::write_response(std::stringstream& ssOut)
 {
-    const std::string sHTML = "<html><body><p>redirect to url </p></body></html>";
+    const std::string sHTML =
+        "<html><head><meta charset=\"utf-8\">"
+        "<meta http-equiv=\"refresh\" content=\"0;url=" + location_str + "\">"
+        "<style>body{font-family:Arial,sans-serif;background:#f7f7f7;color:#222;margin:32px;}"
+        "a.button{display:inline-block;padding:10px 16px;margin-top:12px;background:#0f8bff;color:#fff;text-decoration:none;border-radius:6px;}"
+        "</style></head><body><div class=\"container\">"
+        "<h2>Authentication complete</h2>"
+        "<p>You can return to OrcaSlicer. If your browser does not redirect automatically, use the button below.</p>"
+        "<a class=\"button\" href=\"" + location_str + "\">Continue</a>"
+        "<script>setTimeout(function(){try{window.close();}catch(e){}},1500);</script>"
+        "</div></body></html>";
     ssOut << "HTTP/1.1 302 Found" << std::endl;
     ssOut << "Location: " << location_str << std::endl;
     ssOut << "content-type: text/html" << std::endl;

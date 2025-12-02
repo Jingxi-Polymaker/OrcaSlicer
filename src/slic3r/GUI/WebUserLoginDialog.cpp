@@ -74,13 +74,19 @@ ZUserLogin::ZUserLogin() : wxDialog((wxWindow *) (wxGetApp().mainframe), wxID_AN
     }
     else {
         std::string host_url = agent->get_bambulab_host();
-        TargetUrl = host_url + "/sign-in";
         m_networkOk = false;
 
-        wxString strlang = wxGetApp().current_language_code_safe();
-        if (strlang != "") {
-            strlang.Replace("_", "-");
-            TargetUrl = host_url + "/" + strlang + "/sign-in";
+        if (agent->get_version() == "orca_network") {
+            boost::filesystem::path login_path = boost::filesystem::path(resources_dir()) / "web" / "login" / "orca_login.html";
+            TargetUrl = wxString::FromUTF8("file://") + from_u8(login_path.make_preferred().string());
+        } else {
+            TargetUrl = host_url + "/sign-in";
+
+            wxString strlang = wxGetApp().current_language_code_safe();
+            if (strlang != "") {
+                strlang.Replace("_", "-");
+                TargetUrl = host_url + "/" + strlang + "/sign-in";
+            }
         }
 
         BOOST_LOG_TRIVIAL(info) << "login url = " << TargetUrl.ToStdString();
@@ -275,6 +281,18 @@ void ZUserLogin::OnScriptMessage(wxWebViewEvent &evt)
 
         wxString strCmd = j["command"];
         BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Command: " << strCmd.ToStdString();
+
+        if (strCmd == "get_login_cmd") {
+             INetworkAgent* agent = wxGetApp().getAgent();
+             if (agent) {
+                 // Return login config (backend_url, apikey, pkce)
+                 // WebView handles provider selection internally
+                 std::string login_cmd = agent->build_login_cmd();
+                 wxString str_js = wxString::FromUTF8("window.postMessage(") + wxString::FromUTF8(login_cmd.c_str()) + wxString::FromUTF8(", '*')");
+                 this->RunScript(str_js);
+             }
+             return;
+        }
 
         if (strCmd == "autotest_token")
         {
