@@ -91,7 +91,7 @@ inline std::unique_ptr<INetworkAgent> create_agent_from_config(
     const std::string& log_dir,
     AppConfig* app_config)
 {
-    bool use_orca = false;
+    bool use_orca = true;
     if (app_config) {
         // Try to read use_orca_network setting
         try {
@@ -99,7 +99,7 @@ inline std::unique_ptr<INetworkAgent> create_agent_from_config(
                        app_config->get_bool("use_orca_network");
         } catch (...) {
             // Setting doesn't exist or error reading - default to false
-            use_orca = false;
+            use_orca = true;
         }
     }
 
