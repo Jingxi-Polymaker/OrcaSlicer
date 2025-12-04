@@ -1,10 +1,17 @@
 #include "OrcaNetwork.hpp"
 #include "Http.hpp"
+#include "libslic3r/Utils.hpp"
+#include "libslic3r/AppConfig.hpp"
 #include <boost/log/trivial.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
+#include <boost/filesystem.hpp>
 #include <wx/filename.h>
 #include <sstream>
+#include <fstream>
 #include <cstdlib>
 #include <algorithm>
 #include <chrono>
@@ -16,28 +23,27 @@ namespace pt = boost::property_tree;
 namespace Slic3r {
 
 namespace {
+// Default production URLs
 constexpr const char* ORCA_DEFAULT_API_URL = "https://api.orcaslicer.com";
 constexpr const char* ORCA_DEFAULT_AUTH_URL = "https://auth.orcaslicer.com";
-constexpr const char* ORCA_BACKEND_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttYXVqanhlcXJxdW5nb25jcXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3ODk4NzAsImV4cCI6MjA3NTM2NTg3MH0.-ChNHK2t0Fbsi8opS2nFse7zxJKpPtvYWqG15sbE908";
-constexpr const char* ORCA_HEALTH_PATH = "/v1/health";
-constexpr const char* ORCA_LOGOUT_PATH = "/auth/v1/logout";
-constexpr const char* ENV_ORCA_API_URL = "ORCA_API_URL";
-constexpr const char* ENV_ORCA_AUTH_URL = "ORCA_AUTH_URL";
-constexpr const char* ENV_ORCA_LEGACY_DEFAULT_URL = "ORCA_DEFAULT_BACKEND_URL";
-constexpr const char* ENV_ORCA_BACKEND_ANON_KEY = "ORCA_BACKEND_ANON_KEY";
-constexpr const char* ENV_BACKEND_OVERRIDE = "ORCA_BACKEND_URL";
-constexpr const char* ENV_ORCA_AUTH_ENABLED = "ORCA_AUTH_ENABLED";
-const std::chrono::seconds TOKEN_REFRESH_SKEW{90};
+constexpr const char* ORCA_DEFAULT_PUB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttYXVqanhlcXJxdW5nb25jcXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3ODk4NzAsImV4cCI6MjA3NTM2NTg3MH0.-ChNHK2t0Fbsi8opS2nFse7zxJKpPtvYWqG15sbE908";
 
-bool env_flag_enabled(const char* value, bool default_val = true)
-{
-    if (!value) return default_val;
-    std::string lowered(value);
-    std::transform(lowered.begin(), lowered.end(), lowered.begin(), ::tolower);
-    if (lowered == "0" || lowered == "false" || lowered == "off") return false;
-    if (lowered == "1" || lowered == "true" || lowered == "on") return true;
-    return default_val;
-}
+// API endpoints
+constexpr const char* ORCA_HEALTH_PATH = "/api/v1/health";
+constexpr const char* ORCA_LOGOUT_PATH = "/auth/v1/logout";
+
+// Sync Protocol Endpoints (per Orca Cloud Sync Protocol Specification)
+constexpr const char* ORCA_SYNC_PULL_PATH = "/api/v1/sync/pull";
+constexpr const char* ORCA_SYNC_PUSH_PATH = "/api/v1/sync/push";
+constexpr const char* ORCA_PROFILES_PATH = "/api/v1/profiles";
+constexpr const char* ORCA_SYNC_STATE_FILE = "sync_state";
+
+// AppConfig keys for URL overrides (developer use)
+constexpr const char* CONFIG_ORCA_API_URL = "orca_api_url";
+constexpr const char* CONFIG_ORCA_AUTH_URL = "orca_auth_url";
+constexpr const char* CONFIG_ORCA_PUB_KEY = "orca_pub_key";
+
+const std::chrono::seconds TOKEN_REFRESH_SKEW{90};
 
 std::map<std::string, std::string> strip_apikey(const std::map<std::string, std::string>& headers)
 {
@@ -61,37 +67,11 @@ OrcaNetwork::OrcaNetwork(std::string log_dir)
     , api_base_url(ORCA_DEFAULT_API_URL)
     , auth_base_url(ORCA_DEFAULT_AUTH_URL)
     , is_connected(false)
-    , auth_lane_enabled(true)
     , enable_track(false)
     , multi_machine_enabled(false)
 {
-    auth_lane_enabled = env_flag_enabled(std::getenv(ENV_ORCA_AUTH_ENABLED), true);
-
-    const char* override_url = std::getenv(ENV_BACKEND_OVERRIDE);
-    const char* legacy_default = std::getenv(ENV_ORCA_LEGACY_DEFAULT_URL);
-    const char* api_url = std::getenv(ENV_ORCA_API_URL);
-    const char* auth_url = std::getenv(ENV_ORCA_AUTH_URL);
-
-    if (override_url && *override_url) {
-        api_base_url = override_url;
-        auth_base_url = override_url;
-    } else if (legacy_default && *legacy_default) {
-        api_base_url = legacy_default;
-        auth_base_url = legacy_default;
-    }
-    if (api_url && *api_url) {
-        api_base_url = api_url;
-    }
-    if (auth_url && *auth_url) {
-        auth_base_url = auth_url;
-    }
-
-    const char* anon_key = std::getenv(ENV_ORCA_BACKEND_ANON_KEY);
-    if (anon_key && *anon_key) {
-        auth_headers["apikey"] = anon_key;
-    } else {
-        auth_headers["apikey"] = ORCA_BACKEND_ANON_KEY;
-    }
+    // Set default pub key - can be overridden via configure_urls()
+    auth_headers["apikey"] = ORCA_DEFAULT_PUB_KEY;
 
     auth_manager = std::make_unique<AuthManager>(auth_base_url);
     auth_manager->set_api_base_url(api_base_url);
@@ -100,13 +80,50 @@ OrcaNetwork::OrcaNetwork(std::string log_dir)
         return this->change_user(payload) == BAMBU_NETWORK_SUCCESS;
     });
 
-    if (!auth_lane_enabled) {
-        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Auth lane disabled via ORCA_AUTH_ENABLED flag";
-    }
-
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Constructor - log_dir=" << log_dir
                             << ", api_base_url=" << api_base_url
                             << ", auth_base_url=" << auth_base_url;
+}
+
+void OrcaNetwork::configure_urls(AppConfig* app_config)
+{
+    if (!app_config) {
+        BOOST_LOG_TRIVIAL(debug) << "OrcaNetwork: configure_urls called with null config, using defaults";
+        return;
+    }
+
+    bool urls_changed = false;
+
+    // Read API URL override from AppConfig
+    std::string api_url = app_config->get(CONFIG_ORCA_API_URL);
+    if (!api_url.empty()) {
+        api_base_url = api_url;
+        urls_changed = true;
+        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Using custom API URL from config: " << api_base_url;
+    }
+
+    // Read Auth URL override from AppConfig
+    std::string auth_url = app_config->get(CONFIG_ORCA_AUTH_URL);
+    if (!auth_url.empty()) {
+        auth_base_url = auth_url;
+        urls_changed = true;
+        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Using custom Auth URL from config: " << auth_base_url;
+    }
+
+    // Read Pub Key override from AppConfig
+    std::string pub_key = app_config->get(CONFIG_ORCA_PUB_KEY);
+    if (!pub_key.empty()) {
+        auth_headers["apikey"] = pub_key;
+        urls_changed = true;
+        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Using custom Pub Key from config";
+    }
+
+    // Update AuthManager if URLs changed
+    if (urls_changed && auth_manager) {
+        auth_manager->set_api_base_url(api_base_url);
+        auth_manager->set_auth_base_url(auth_base_url);
+        auth_manager->set_extra_headers(auth_headers);
+    }
 }
 
 OrcaNetwork::~OrcaNetwork()
@@ -133,6 +150,7 @@ int OrcaNetwork::set_config_dir(std::string config_dir)
     if (auth_manager) {
         auth_manager->set_config_dir(config_dir);
     }
+
     return BAMBU_NETWORK_SUCCESS;
 }
 
@@ -165,12 +183,10 @@ int OrcaNetwork::start()
 
     if (auth_manager) {
         auth_manager->regenerate_pkce();
-        if (auth_lane_enabled) {
-            // Attempt silent sign-in using stored refresh token
-            std::string stored_refresh;
-            if (auth_manager->load_refresh_token(stored_refresh)) {
-                auth_manager->try_refresh_async(stored_refresh);
-            }
+        // Attempt silent sign-in using stored refresh token
+        std::string stored_refresh;
+        if (auth_manager->load_refresh_token(stored_refresh)) {
+            auth_manager->try_refresh_async(stored_refresh);
         }
     }
     return BAMBU_NETWORK_SUCCESS;
@@ -277,12 +293,6 @@ int OrcaNetwork::connect_server()
 
     int result = http_get(ORCA_HEALTH_PATH, &response, &http_code);
 
-    if (!(result == BAMBU_NETWORK_SUCCESS && http_code == 200)) {
-        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: Orca cloud health check failed (http_code=" << http_code
-                                   << "), falling back to legacy /api/v1/health";
-        result = http_get("/api/v1/health", &response, &http_code);
-    }
-
     if (result == BAMBU_NETWORK_SUCCESS && http_code == 200) {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);
         is_connected = true;
@@ -370,6 +380,19 @@ int OrcaNetwork::set_user_session(std::string token, std::string user_id, std::s
     auth_manager->set_user_session(token, user_id, username, name, nickname, avatar, refresh_token);
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Auth login successful - user_id=" << user_id;
 
+    // Initialize per-user sync state path: config_dir/user_id/sync_state
+    if (!config_dir.empty() && !user_id.empty()) {
+        std::string user_dir = config_dir + "/" + user_id;
+        // Create user directory if it doesn't exist
+        boost::filesystem::path user_path(user_dir);
+        if (!boost::filesystem::exists(user_path)) {
+            boost::filesystem::create_directories(user_path);
+        }
+        sync_state_path = user_dir + "/" + ORCA_SYNC_STATE_FILE;
+        load_sync_state();
+        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Initialized sync state path - " << sync_state_path;
+    }
+
     // Invoke callback
     invoke_user_login_callback(1, true);
 
@@ -412,7 +435,7 @@ int OrcaNetwork::change_user(std::string user_info)
             std::string refresh_token = read_str(data, "refresh_token");
             std::string state = read_str(data, "state");
 
-            if (auth_lane_enabled && auth_manager) {
+            if (auth_manager) {
                 const auto expected_state = auth_manager->pkce().state;
                 if (!expected_state.empty() && state != expected_state) {
                     BOOST_LOG_TRIVIAL(warning) << "[auth] event=login result=failure reason=state_mismatch";
@@ -538,6 +561,13 @@ int OrcaNetwork::user_logout(bool request)
     // Clear session
     if (auth_manager) {
         auth_manager->clear_session();
+    }
+
+    // Clear per-user sync state
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex);
+        sync_state = SyncState{};
+        sync_state_path.clear();
     }
 
     // Invoke callback
@@ -667,50 +697,49 @@ int OrcaNetwork::get_user_presets(std::map<std::string, std::map<std::string, st
         return BAMBU_NETWORK_ERR_INVALID_HANDLE;
     }
 
-    std::string response;
-    unsigned int http_code = 0;
-
-    int result = http_get("/v1/presets", &response, &http_code);
-
-    if (result != BAMBU_NETWORK_SUCCESS || http_code != 200) {
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: get_user_presets failed - http_code=" << http_code;
-        return BAMBU_NETWORK_ERR_GET_SETTING_LIST_FAILED;
+    // Save current sync state in case we need to restore on failure
+    SyncState saved_state;
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex);
+        saved_state = sync_state;
     }
 
-    try {
-        // Parse response
-        std::stringstream ss(response);
-        pt::ptree tree;
-        pt::read_json(ss, tree);
+    // Clear sync state in memory only (to get full list of profiles)
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex);
+        sync_state = SyncState{};
+    }
 
-        bool success = tree.get<bool>("success", false);
-        if (!success) {
-            return BAMBU_NETWORK_ERR_GET_SETTING_LIST_FAILED;
-        }
+    int result_code = BAMBU_NETWORK_ERR_GET_SETTING_LIST_FAILED;
 
-        // Parse presets: map[type][setting_id] = json_string
-        pt::ptree presets_tree = tree.get_child("presets");
-        for (const auto& type_pair : presets_tree) {
-            std::string type = type_pair.first;
+    sync_pull(
+        [&](const SyncPullResponse& response) {
+            // Convert sync response to "map[type][setting_id] = json_string"
+            for (const auto& upsert : response.upserts) {
+                std::string type = "print"; // Default type
+                if (upsert.content.contains("type")) {
+                    type = upsert.content["type"].get<std::string>();
+                }
 
-            for (const auto& preset_pair : type_pair.second) {
-                std::string setting_id = preset_pair.first;
-
-                // Convert preset ptree to JSON string
-                std::stringstream preset_ss;
-                pt::write_json(preset_ss, preset_pair.second);
-
-                (*user_presets)[type][setting_id] = preset_ss.str();
+                (*user_presets)[type][upsert.id] = upsert.content.dump();
             }
+            result_code = BAMBU_NETWORK_SUCCESS;
+            BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Retrieved " << user_presets->size() << " preset types";
+        },
+        [&](int http_code, const std::string& error) {
+            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: get_user_presets failed - http_code=" << http_code << ", error=" << error;
+            result_code = BAMBU_NETWORK_ERR_GET_SETTING_LIST_FAILED;
         }
+    );
 
-        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Retrieved " << user_presets->size() << " preset types";
-        return BAMBU_NETWORK_SUCCESS;
-
-    } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: get_user_presets parse error - " << e.what();
-        return BAMBU_NETWORK_ERR_INVALID_RESULT;
+    // If pull failed, restore the previous sync state to preserve conflict protection
+    if (result_code != BAMBU_NETWORK_SUCCESS) {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex);
+        sync_state = saved_state;
+        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Restored previous sync state after failed pull";
     }
+
+    return result_code;
 }
 
 std::string OrcaNetwork::request_setting_id(std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code)
@@ -723,49 +752,41 @@ std::string OrcaNetwork::request_setting_id(std::string name, std::map<std::stri
         return "";
     }
 
-    try {
-        // Build request
-        pt::ptree req;
-        req.put("name", name);
-        req.put("type", "print"); // Default type
+    // Generate a new UUID for the profile
+    boost::uuids::random_generator generator;
+    boost::uuids::uuid uuid = generator();
+    std::string profile_id = boost::uuids::to_string(uuid);
 
-        // Add values
-        if (values_map && !values_map->empty()) {
-            pt::ptree values_tree;
-            for (const auto& pair : *values_map) {
-                values_tree.put(pair.first, pair.second);
-            }
-            req.add_child("values", values_tree);
+    // Build content JSON
+    nlohmann::json content;
+    content["name"] = name;
+    content["type"] = "print"; // Default type
+
+    if (values_map && !values_map->empty()) {
+        for (const auto& pair : *values_map) {
+            // Skip updated_time - it's metadata, not content
+            if (pair.first == "updated_time") continue;
+            content[pair.first] = pair.second;
         }
-
-        std::stringstream req_ss;
-        pt::write_json(req_ss, req);
-
-        std::string response;
-        unsigned int code = 0;
-
-        int result = http_post("/v1/presets", req_ss.str(), &response, &code);
-        if (http_code) *http_code = code;
-
-        if (result == BAMBU_NETWORK_SUCCESS && code == 201) {
-            // Parse response
-            std::stringstream resp_ss(response);
-            pt::ptree resp_tree;
-            pt::read_json(resp_ss, resp_tree);
-
-            std::string setting_id = resp_tree.get<std::string>("setting_id", "");
-            BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Created preset - setting_id=" << setting_id;
-            return setting_id;
-        }
-
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: request_setting_id failed - http_code=" << code;
-        return "";
-
-    } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: request_setting_id exception - " << e.what();
-        if (http_code) *http_code = 500;
-        return "";
     }
+
+    // Use sync_push to create the profile (no original_updated_at for new profiles per spec)
+    SyncPushResult result = sync_push(profile_id, content);
+
+    if (http_code) *http_code = result.http_code;
+
+    if (result.success) {
+        // Return new_updated_at via values_map so caller can store it in Preset::updated_time
+        if (values_map && !result.new_updated_at.empty()) {
+            (*values_map)["updated_time"] = result.new_updated_at;
+        }
+        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Created preset - setting_id=" << profile_id
+                                << ", new_updated_at=" << result.new_updated_at;
+        return profile_id;
+    }
+
+    BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: request_setting_id failed - " << result.error_message;
+    return "";
 }
 
 int OrcaNetwork::put_setting(std::string setting_id, std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code)
@@ -778,43 +799,53 @@ int OrcaNetwork::put_setting(std::string setting_id, std::string name, std::map<
         return BAMBU_NETWORK_ERR_INVALID_HANDLE;
     }
 
-    try {
-        // Build request
-        pt::ptree req;
-        req.put("name", name);
-
-        // Add values
-        if (values_map && !values_map->empty()) {
-            pt::ptree values_tree;
-            for (const auto& pair : *values_map) {
-                values_tree.put(pair.first, pair.second);
-            }
-            req.add_child("values", values_tree);
+    // Extract original_updated_at for Optimistic Concurrency Control (per spec section 5.2)
+    // If present, server will verify version before update. If absent, treated as insert.
+    std::string original_updated_at;
+    if (values_map) {
+        auto it = values_map->find("updated_time");
+        if (it != values_map->end()) {
+            original_updated_at = it->second;
         }
-
-        std::stringstream req_ss;
-        pt::write_json(req_ss, req);
-
-        std::string response;
-        unsigned int code = 0;
-
-        std::string path = "/v1/presets/" + setting_id;
-        int result = http_put(path, req_ss.str(), &response, &code);
-        if (http_code) *http_code = code;
-
-        if (result == BAMBU_NETWORK_SUCCESS && code == 200) {
-            BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Updated preset successfully";
-            return BAMBU_NETWORK_SUCCESS;
-        }
-
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: put_setting failed - http_code=" << code;
-        return BAMBU_NETWORK_ERR_PUT_SETTING_FAILED;
-
-    } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: put_setting exception - " << e.what();
-        if (http_code) *http_code = 500;
-        return BAMBU_NETWORK_ERR_PUT_SETTING_FAILED;
     }
+
+    // Build content JSON
+    nlohmann::json content;
+    content["name"] = name;
+
+    if (values_map && !values_map->empty()) {
+        for (const auto& pair : *values_map) {
+            // Skip updated_time - it's used for OCC, not as content
+            if (pair.first == "updated_time") continue;
+            content[pair.first] = pair.second;
+        }
+    }
+
+    // Use sync_push to update the profile with OCC
+    SyncPushResult result = sync_push(setting_id, content, original_updated_at);
+
+    if (http_code) *http_code = result.http_code;
+
+    if (result.success) {
+        // Return new_updated_at via values_map so caller can store it in Preset::updated_time
+        if (values_map && !result.new_updated_at.empty()) {
+            (*values_map)["updated_time"] = result.new_updated_at;
+        }
+        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Updated preset successfully - new_updated_at=" << result.new_updated_at;
+        return BAMBU_NETWORK_SUCCESS;
+    }
+
+    // Handle conflict (409) - server has newer version
+    if (result.http_code == 409) {
+        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: put_setting conflict - server has newer version";
+        // Return server's current updated_at so caller can update local state and retry
+        if (values_map && !result.server_version.updated_at.empty()) {
+            (*values_map)["updated_time"] = result.server_version.updated_at;
+        }
+    }
+
+    BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: put_setting failed - " << result.error_message;
+    return BAMBU_NETWORK_ERR_PUT_SETTING_FAILED;
 }
 
 int OrcaNetwork::get_setting_list(std::string bundle_version, ProgressFn pro_fn, WasCancelledFn cancel_fn)
@@ -836,83 +867,131 @@ int OrcaNetwork::get_setting_list2(std::string bundle_version, CheckFn chk_fn, P
     // Launch background thread for async operation
     std::thread([this, bundle_version, chk_fn, pro_fn, cancel_fn]() {
         try {
-            std::string response;
-            unsigned int http_code = 0;
+            // Use sync_pull to get changes since last sync
+            sync_pull(
+                [this, chk_fn, pro_fn, cancel_fn](const SyncPullResponse& response) {
+                    int total = static_cast<int>(response.upserts.size() + response.deletes.size());
+                    int index = 0;
 
-            std::string path = "/v1/presets/sync?bundle_version=" + bundle_version;
-            int result = http_get(path, &response, &http_code);
+                    // Process upserts
+                    for (const auto& upsert : response.upserts) {
+                        // Check cancellation
+                        if (cancel_fn && cancel_fn()) {
+                            BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: get_setting_list2 cancelled";
+                            return;
+                        }
 
-            if (result != BAMBU_NETWORK_SUCCESS || http_code != 200) {
-                BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: get_setting_list2 failed - http_code=" << http_code;
-                return;
-            }
+                        // Convert profile to map for CheckFn
+                        if (chk_fn) {
+                            std::map<std::string, std::string> preset_info;
+                            preset_info["setting_id"] = upsert.id;
+                            preset_info["updated_at"] = upsert.updated_at;
 
-            // Parse response
-            std::stringstream ss(response);
-            pt::ptree tree;
-            pt::read_json(ss, tree);
+                            // Flatten JSON content to map
+                            if (upsert.content.is_object()) {
+                                for (auto& [key, value] : upsert.content.items()) {
+                                    if (value.is_string()) {
+                                        preset_info[key] = value.get<std::string>();
+                                    } else {
+                                        preset_info[key] = value.dump();
+                                    }
+                                }
+                            }
 
-            bool success = tree.get<bool>("success", false);
-            if (!success) {
-                return;
-            }
+                            // Invoke check function on main thread
+                            QueueOnMainFn queue_fn;
+                            {
+                                std::lock_guard<std::recursive_mutex> lock(state_mutex);
+                                queue_fn = queue_on_main_fn;
+                            }
 
-            int total = tree.get<int>("total", 0);
-            pt::ptree presets_tree = tree.get_child("presets");
+                            if (queue_fn) {
+                                queue_fn([chk_fn, preset_info]() {
+                                    chk_fn(preset_info);
+                                });
+                            } else {
+                                chk_fn(preset_info);
+                            }
+                        }
 
-            int index = 0;
-            for (const auto& preset_pair : presets_tree) {
-                // Check cancellation
-                if (cancel_fn && cancel_fn()) {
-                    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: get_setting_list2 cancelled";
-                    break;
-                }
+                        // Report progress
+                        if (pro_fn) {
+                            int progress = total > 0 ? (index * 100 / total) : 100;
 
-                // Convert preset to map for CheckFn
-                if (chk_fn) {
-                    std::map<std::string, std::string> preset_info;
-                    for (const auto& field : preset_pair.second) {
-                        preset_info[field.first] = field.second.get_value<std::string>();
+                            QueueOnMainFn queue_fn;
+                            {
+                                std::lock_guard<std::recursive_mutex> lock(state_mutex);
+                                queue_fn = queue_on_main_fn;
+                            }
+
+                            if (queue_fn) {
+                                queue_fn([pro_fn, progress]() {
+                                    pro_fn(progress);
+                                });
+                            } else {
+                                pro_fn(progress);
+                            }
+                        }
+
+                        index++;
                     }
 
-                    // Invoke check function
-                    if (queue_on_main_fn) {
-                        queue_on_main_fn([chk_fn, preset_info]() {
-                            chk_fn(preset_info);
-                        });
-                    } else {
-                        chk_fn(preset_info);
+                    // Process deletes (tombstones)
+                    for (const auto& deleted_id : response.deletes) {
+                        if (cancel_fn && cancel_fn()) {
+                            BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: get_setting_list2 cancelled";
+                            return;
+                        }
+
+                        // Notify via CheckFn with a special marker for deletion
+                        if (chk_fn) {
+                            std::map<std::string, std::string> preset_info;
+                            preset_info["setting_id"] = deleted_id;
+                            preset_info["deleted"] = "true";
+
+                            QueueOnMainFn queue_fn;
+                            {
+                                std::lock_guard<std::recursive_mutex> lock(state_mutex);
+                                queue_fn = queue_on_main_fn;
+                            }
+
+                            if (queue_fn) {
+                                queue_fn([chk_fn, preset_info]() {
+                                    chk_fn(preset_info);
+                                });
+                            } else {
+                                chk_fn(preset_info);
+                            }
+                        }
+
+                        index++;
                     }
-                }
 
-                // Report progress
-                if (pro_fn) {
-                    int progress = total > 0 ? (index * 100 / total) : 100;
+                    // Final progress
+                    if (pro_fn) {
+                        QueueOnMainFn queue_fn;
+                        {
+                            std::lock_guard<std::recursive_mutex> lock(state_mutex);
+                            queue_fn = queue_on_main_fn;
+                        }
 
-                    if (queue_on_main_fn) {
-                        queue_on_main_fn([pro_fn, progress]() {
-                            pro_fn(progress);
-                        });
-                    } else {
-                        pro_fn(progress);
+                        if (queue_fn) {
+                            queue_fn([pro_fn]() {
+                                pro_fn(100);
+                            });
+                        } else {
+                            pro_fn(100);
+                        }
                     }
+
+                    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: get_setting_list2 completed - upserts="
+                                            << response.upserts.size() << ", deletes=" << response.deletes.size();
+                },
+                [](int http_code, const std::string& error) {
+                    BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: get_setting_list2 sync_pull failed - http_code="
+                                             << http_code << ", error=" << error;
                 }
-
-                index++;
-            }
-
-            // Final progress
-            if (pro_fn) {
-                if (queue_on_main_fn) {
-                    queue_on_main_fn([pro_fn]() {
-                        pro_fn(100);
-                    });
-                } else {
-                    pro_fn(100);
-                }
-            }
-
-            BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: get_setting_list2 completed - processed " << index << " presets";
+            );
 
         } catch (const std::exception& e) {
             BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: get_setting_list2 exception - " << e.what();
@@ -934,16 +1013,296 @@ int OrcaNetwork::delete_setting(std::string setting_id)
     std::string response;
     unsigned int http_code = 0;
 
-    std::string path = "/v1/presets/" + setting_id;
+    // Use new profiles endpoint for deletion
+    std::string path = std::string(ORCA_PROFILES_PATH) + "/" + setting_id;
     int result = http_delete(path, &response, &http_code);
 
-    if (result == BAMBU_NETWORK_SUCCESS && http_code == 200) {
+    if (result == BAMBU_NETWORK_SUCCESS && (http_code == 200 || http_code == 204)) {
         BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Deleted preset successfully";
+        // Note: Preset's .info file will be deleted when the preset file is removed
         return BAMBU_NETWORK_SUCCESS;
     }
 
     BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: delete_setting failed - http_code=" << http_code;
     return BAMBU_NETWORK_ERR_DEL_SETTING_FAILED;
+}
+
+// ============================================================================
+// Sync State Persistence
+// ============================================================================
+
+void OrcaNetwork::load_sync_state()
+{
+    std::lock_guard<std::recursive_mutex> lock(state_mutex);
+
+    if (sync_state_path.empty()) {
+        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: sync_state_path is empty, cannot load sync state";
+        return;
+    }
+
+    try {
+        std::ifstream file(sync_state_path);
+        if (!file.is_open()) {
+            BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: No sync state file found, starting fresh";
+            return;
+        }
+
+        // Read global cursor
+        std::getline(file, sync_state.last_sync_timestamp);
+
+        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Loaded sync state - cursor=" << sync_state.last_sync_timestamp;
+
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: Failed to load sync state - " << e.what();
+        // Reset to clean state on error
+        sync_state = SyncState{};
+    }
+}
+
+void OrcaNetwork::save_sync_state()
+{
+    std::lock_guard<std::recursive_mutex> lock(state_mutex);
+
+    if (sync_state_path.empty()) {
+        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: sync_state_path is empty, cannot save sync state";
+        return;
+    }
+
+    try {
+        // Write to temp file first, then rename for atomic write
+        std::string temp_path = sync_state_path + ".tmp";
+        std::ofstream file(temp_path);
+        if (!file.is_open()) {
+            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: Failed to open sync state file for writing";
+            return;
+        }
+
+        // Write global cursor
+        file << sync_state.last_sync_timestamp;
+        file.close();
+
+        std::error_code ec = rename_file(temp_path, sync_state_path);
+        if (ec) {
+            BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: Failed to rename sync state file - " << ec.message();
+            std::remove(temp_path.c_str());
+            return;
+        }
+
+        BOOST_LOG_TRIVIAL(debug) << "OrcaNetwork: Saved sync state - cursor=" << sync_state.last_sync_timestamp;
+
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: Failed to save sync state - " << e.what();
+    }
+}
+
+void OrcaNetwork::clear_sync_state()
+{
+    std::lock_guard<std::recursive_mutex> lock(state_mutex);
+    sync_state = SyncState{};
+    save_sync_state();
+    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Cleared sync state";
+}
+
+// ============================================================================
+// New Sync Protocol Implementation
+// ============================================================================
+
+int OrcaNetwork::sync_pull(
+    std::function<void(const SyncPullResponse&)> on_success,
+    std::function<void(int http_code, const std::string& error)> on_error)
+{
+    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: sync_pull()";
+
+    if (!is_user_login()) {
+        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: Not logged in";
+        if (on_error) on_error(401, "Not logged in");
+        return BAMBU_NETWORK_ERR_INVALID_HANDLE;
+    }
+
+    // Build pull URL with cursor
+    std::string cursor;
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex);
+        cursor = sync_state.last_sync_timestamp;
+    }
+
+    std::string path = std::string(ORCA_SYNC_PULL_PATH);
+    if (!cursor.empty()) {
+        path += "?cursor=" + cursor;
+    }
+
+    std::string response;
+    unsigned int http_code = 0;
+
+    int result = http_get(path, &response, &http_code);
+
+    // Handle 410 Gone - cursor too old, need full resync
+    if (http_code == 410) {
+        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: sync_pull returned 410 Gone - cursor too old, triggering full resync";
+        clear_sync_state();
+        // Retry without cursor
+        path = std::string(ORCA_SYNC_PULL_PATH);
+        result = http_get(path, &response, &http_code);
+    }
+
+    if (result != BAMBU_NETWORK_SUCCESS || (http_code != 200 && http_code != 304)) {
+        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: sync_pull failed - http_code=" << http_code;
+        if (on_error) on_error(http_code, response);
+        return BAMBU_NETWORK_ERR_GET_SETTING_LIST_FAILED;
+    }
+
+    // 304 Not Modified - no changes
+    if (http_code == 304) {
+        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: sync_pull - no changes (304)";
+        if (on_success) {
+            SyncPullResponse empty_response;
+            on_success(empty_response);
+        }
+        return BAMBU_NETWORK_SUCCESS;
+    }
+
+    try {
+        nlohmann::json j = nlohmann::json::parse(response);
+
+        SyncPullResponse pull_response;
+        pull_response.next_cursor = j.value("next_cursor", "");
+
+        // Parse upserts
+        if (j.contains("upserts") && j["upserts"].is_array()) {
+            for (const auto& item : j["upserts"]) {
+                ProfileUpsert upsert;
+                upsert.id = item.value("id", "");
+                upsert.updated_at = item.value("updated_at", "");
+                if (item.contains("content")) {
+                    upsert.content = item["content"];
+                }
+                pull_response.upserts.push_back(std::move(upsert));
+            }
+        }
+
+        // Parse deletes (tombstones)
+        if (j.contains("deletes") && j["deletes"].is_array()) {
+            for (const auto& item : j["deletes"]) {
+                if (item.is_string()) {
+                    pull_response.deletes.push_back(item.get<std::string>());
+                }
+            }
+        }
+
+        // Update global sync cursor
+        // Note: Per-profile timestamps are stored in .info files as Preset::updated_time
+        // The caller should store upsert.updated_at in Preset::updated_time as-is
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_mutex);
+            if (!pull_response.next_cursor.empty()) {
+                sync_state.last_sync_timestamp = pull_response.next_cursor;
+            }
+            save_sync_state();
+        }
+
+        BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: sync_pull completed - upserts=" << pull_response.upserts.size()
+                                << ", deletes=" << pull_response.deletes.size()
+                                << ", next_cursor=" << pull_response.next_cursor;
+
+        if (on_success) on_success(pull_response);
+        return BAMBU_NETWORK_SUCCESS;
+
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: sync_pull parse error - " << e.what();
+        if (on_error) on_error(500, std::string("Parse error: ") + e.what());
+        return BAMBU_NETWORK_ERR_INVALID_RESULT;
+    }
+}
+
+SyncPushResult OrcaNetwork::sync_push(
+    const std::string& profile_id,
+    const nlohmann::json& content,
+    const std::string& original_updated_at)
+{
+    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: sync_push - profile_id=" << profile_id
+                            << ", original_updated_at=" << (original_updated_at.empty() ? "(new)" : original_updated_at);
+
+    SyncPushResult result;
+    result.success = false;
+    result.http_code = 0;
+
+    if (!is_user_login()) {
+        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: Not logged in";
+        result.http_code = 401;
+        result.error_message = "Not logged in";
+        return result;
+    }
+
+    // original_updated_at is passed from Preset::updated_time directly for optimistic concurrency control
+
+    try {
+        // Build request body per spec
+        nlohmann::json request_body;
+        request_body["id"] = profile_id;
+        request_body["content"] = content;
+        if (!original_updated_at.empty()) {
+            request_body["original_updated_at"] = original_updated_at;
+        }
+
+        std::string response;
+        unsigned int http_code = 0;
+
+        int net_result = http_post(ORCA_SYNC_PUSH_PATH, request_body.dump(), &response, &http_code);
+        result.http_code = http_code;
+
+        if (net_result == BAMBU_NETWORK_SUCCESS && http_code == 200) {
+            // Success - parse new timestamp from server
+            try {
+                nlohmann::json resp_json = nlohmann::json::parse(response);
+                result.new_updated_at = resp_json.value("new_updated_at", resp_json.value("updated_at", ""));
+
+                if (!result.new_updated_at.empty()) {
+                    // Caller must store result.new_updated_at in Preset::updated_time as-is
+                    result.success = true;
+                    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: sync_push successful - new_updated_at=" << result.new_updated_at;
+                } else {
+                    // Server returned 200 but no timestamp - cannot maintain optimistic concurrency
+                    BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: sync_push failed - server returned 200 but no timestamp in response";
+                    result.success = false;
+                    result.error_message = "Server response missing required timestamp";
+                }
+            } catch (const std::exception& e) {
+                BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: sync_push failed - response parse error: " << e.what();
+                result.success = false;
+                result.error_message = std::string("Response parse error: ") + e.what();
+            }
+            return result;
+        }
+
+        if (http_code == 409) {
+            // Conflict - parse server version
+            BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: sync_push conflict (409) - server has newer version";
+            result.success = false;
+            result.error_message = "Conflict: server has newer version";
+
+            try {
+                nlohmann::json resp_json = nlohmann::json::parse(response);
+                result.server_version.id = resp_json.value("id", profile_id);
+                result.server_version.updated_at = resp_json.value("updated_at", "");
+                if (resp_json.contains("content")) {
+                    result.server_version.content = resp_json["content"];
+                }
+            } catch (const std::exception& e) {
+                BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: sync_push conflict response parse error - " << e.what();
+            }
+            return result;
+        }
+
+        // Other error
+        result.error_message = "HTTP error: " + std::to_string(http_code);
+        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: sync_push failed - http_code=" << http_code;
+        return result;
+
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: sync_push exception - " << e.what();
+        result.error_message = std::string("Exception: ") + e.what();
+        return result;
+    }
 }
 
 // ============================================================================
@@ -989,13 +1348,13 @@ std::map<std::string, std::string> OrcaNetwork::data_headers()
 
 bool OrcaNetwork::ensure_token_fresh(const std::string& reason)
 {
-    if (!auth_lane_enabled || !auth_manager) return true;
+    if (!auth_manager) return true;
     return auth_manager->refresh_if_expiring(TOKEN_REFRESH_SKEW, reason);
 }
 
 bool OrcaNetwork::attempt_refresh_after_unauthorized(const std::string& reason)
 {
-    if (!auth_lane_enabled || !auth_manager) return false;
+    if (!auth_manager) return false;
     if (auth_manager->refresh_from_storage(reason, false)) return true;
 
     std::this_thread::sleep_for(std::chrono::milliseconds(500));

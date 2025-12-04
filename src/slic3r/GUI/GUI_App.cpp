@@ -5158,7 +5158,7 @@ void GUI_App::sync_preset(Preset* preset)
     int result = -1;
     unsigned int http_code = 200;
     std::string updated_info;
-    long long update_time = 0;
+    std::string update_time = "";
     // only sync user's preset
     if (!preset->is_user()) return;
 
@@ -5340,7 +5340,7 @@ void GUI_App::start_sync_user_preset(bool with_progress_dlg)
                 auto name = info[BBL_JSON_KEY_NAME];
                 auto setting_id = info[BBL_JSON_KEY_SETTING_ID];
                 auto update_time_str = info[BBL_JSON_KEY_UPDATE_TIME];
-                long long update_time = 0;
+                std::string update_time = "";
                 if (!update_time_str.empty())
                     update_time = std::atoll(update_time_str.c_str());
                 if (type == "filament") {

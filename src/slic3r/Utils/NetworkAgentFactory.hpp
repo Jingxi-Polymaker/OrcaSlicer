@@ -4,6 +4,7 @@
 #include "INetworkAgent.hpp"
 #include "NetworkAgent.hpp"
 #include "OrcaNetwork.hpp"
+#include "libslic3r/AppConfig.hpp"
 #include <memory>
 #include <string>
 
@@ -102,7 +103,17 @@ inline std::unique_ptr<INetworkAgent> create_agent_from_config(
         }
     }
 
-    return NetworkAgentFactory::create(log_dir, use_orca);
+    auto agent = NetworkAgentFactory::create(log_dir, use_orca);
+
+    // Configure OrcaNetwork URL overrides from AppConfig if applicable
+    if (use_orca && app_config) {
+        auto* orca_agent = dynamic_cast<OrcaNetwork*>(agent.get());
+        if (orca_agent) {
+            orca_agent->configure_urls(app_config);
+        }
+    }
+
+    return agent;
 }
 
 } // namespace Slic3r

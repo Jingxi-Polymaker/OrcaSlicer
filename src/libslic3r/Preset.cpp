@@ -5,6 +5,7 @@
 #include "Preset.hpp"
 #include "PresetBundle.hpp"
 #include "AppConfig.hpp"
+#include "Time.hpp"
 
 #ifdef _MSC_VER
     #define WIN32_LEAN_AND_MEAN
@@ -494,8 +495,8 @@ void Preset::load_info(const std::string& file)
                     this->base_id.clear();
             }
             else if (v.first.compare("updated_time") == 0) {
-                std::string time = v.second.get_value<std::string>();
-                this->updated_time = std::atoll(time.c_str());
+                // Store as-is (exact string from server)
+                this->updated_time = v.second.get_value<std::string>();
             }
         }
     }
@@ -503,13 +504,6 @@ void Preset::load_info(const std::string& file)
         return;
     }
 
-    //TODO: workaround for current info file convert, will remove it later
-    if (this->updated_time == 0) {
-        this->updated_time = (long long)Slic3r::Utils::get_current_time_utc();
-        //this->sync_info = "update";
-        BOOST_LOG_TRIVIAL(info) << boost::format("old info file, updated time to %1%") % this->updated_time;
-        save_info();
-    }
 }
 
 void Preset::save_info(std::string file)
@@ -533,7 +527,8 @@ void Preset::save_info(std::string file)
     c << "user_id" << " = " << this->user_id << std::endl;
     c << "setting_id" << " = " << this->setting_id << std::endl;
     c << "base_id" << " = " << this->base_id << std::endl;
-    c << "updated_time" << " = " << std::to_string(this->updated_time) << std::endl;
+    // Save updated_time as-is (exact string from server)
+    c << "updated_time" << " = " << this->updated_time << std::endl;
     c.close();
 }
 
@@ -1480,7 +1475,7 @@ int PresetCollection::get_differed_values_to_update(Preset& preset, std::map<std
     }
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " uploading user preset name is: " << preset.name << "and create filament_id is: " << preset.filament_id
                             << " and base_id is: " << preset.base_id;
-    key_values[BBL_JSON_KEY_UPDATE_TIME] = std::to_string(preset.updated_time);
+    key_values[BBL_JSON_KEY_UPDATE_TIME] = preset.updated_time;
     key_values[BBL_JSON_KEY_TYPE] = Preset::get_iot_type_string(preset.type);
     return 0;
 }
@@ -1625,7 +1620,7 @@ bool PresetCollection::reset_project_embedded_presets()
     return re_select;
 }
 
-void PresetCollection::set_sync_info_and_save(std::string name, std::string setting_id, std::string syncinfo, long long update_time)
+void PresetCollection::set_sync_info_and_save(std::string name, std::string setting_id, std::string syncinfo, const std::string& update_time)
 {
     lock();
     for (auto it = m_presets.begin(); it != m_presets.end(); it++) {
@@ -1643,7 +1638,7 @@ void PresetCollection::set_sync_info_and_save(std::string name, std::string sett
                     }
             }
             preset->setting_id = setting_id;
-            if (update_time > 0)
+            if (!update_time.empty())
                 preset->updated_time = update_time;
             preset->sync_info == "update" ? preset->save(nullptr) : preset->save_info();
             break;
@@ -1652,11 +1647,14 @@ void PresetCollection::set_sync_info_and_save(std::string name, std::string sett
     unlock();
 }
 
-bool PresetCollection::need_sync(std::string name, std::string setting_id, long long update_time)
+bool PresetCollection::need_sync(std::string name, std::string setting_id, const std::string& update_time)
 {
     lock();
     auto preset = find_preset(name, false, true);
-    bool need   = preset == nullptr || preset->setting_id != setting_id || preset->updated_time < update_time;
+    // Convert to millis for comparison
+    long long update_millis = Slic3r::Utils::iso8601_to_millis(update_time);
+    long long preset_millis = preset ? Slic3r::Utils::iso8601_to_millis(preset->updated_time) : -1;
+    bool need = preset == nullptr || preset->setting_id != setting_id || preset_millis < update_millis;
     unlock();
     return need;
 }
@@ -1778,10 +1776,10 @@ bool PresetCollection::load_user_preset(std::string name, std::map<std::string, 
     }
     std::string cloud_setting_id = preset_values[BBL_JSON_KEY_SETTING_ID];
 
-    //update_time
-    long long cloud_update_time = 0;
+    //update_time (stored as string, converted to millis for comparison)
+    std::string cloud_update_time;
     if (preset_values.find(BBL_JSON_KEY_UPDATE_TIME) != preset_values.end()) {
-        cloud_update_time = std::atoll(preset_values[BBL_JSON_KEY_UPDATE_TIME].c_str());
+        cloud_update_time = preset_values[BBL_JSON_KEY_UPDATE_TIME];
     }
 
     //user_id
@@ -1797,9 +1795,11 @@ bool PresetCollection::load_user_preset(std::string name, std::map<std::string, 
     bool need_update = false;
     if ((iter != m_presets.end()) && (iter->name == name)) {
         BOOST_LOG_TRIVIAL(info) << "Found the Preset locally: " << name;
-        //BBS: we should compare the time between cloud and local
-        if ((cloud_update_time == 0) || (cloud_update_time <= iter->updated_time)) {
-            if (cloud_update_time < iter->updated_time)
+        //BBS: we should compare the time between cloud and local (convert to millis for comparison)
+        long long cloud_millis = Slic3r::Utils::iso8601_to_millis(cloud_update_time);
+        long long local_millis = Slic3r::Utils::iso8601_to_millis(iter->updated_time);
+        if ((cloud_millis <= 0) || (cloud_millis <= local_millis)) {
+            if (cloud_millis < local_millis)
                 iter->sync_info = "update";
             else
                 iter->sync_info.clear();
@@ -1808,7 +1808,7 @@ bool PresetCollection::load_user_preset(std::string name, std::map<std::string, 
             fs::path idx_file(iter->file);
             idx_file.replace_extension(".info");
             iter->save_info(idx_file.string());
-            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format("preset %1%'s update_time is eqaul or newer, cloud  update_time %2%, local update_time %3%")%name %cloud_update_time %iter->updated_time;
+            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format("preset %1%'s update_time is equal or newer, cloud update_time %2%, local update_time %3%")%name %cloud_update_time %iter->updated_time;
             unlock();
             return false;
         }

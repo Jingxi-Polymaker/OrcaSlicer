@@ -48,6 +48,7 @@ public:
     void set_extra_headers(const std::map<std::string, std::string>& extra);
     void set_config_dir(const std::string& config_dir);
     void set_api_base_url(const std::string& api_base_url);
+    void set_auth_base_url(const std::string& auth_base_url);
     void set_session_handler(SessionHandler handler);
 
     const PkceBundle& pkce();

@@ -263,7 +263,7 @@ public:
     std::string         base_id;         // base id of preset
     std::string         sync_info;       // enum: "delete", "create", "update", ""
     std::string         description;     //
-    long long           updated_time{0};    //last updated time
+    std::string         updated_time;       // last updated time (stored as-is from server, typically ISO 8601)
     std::map<std::string, std::string> key_values;
 
     static std::string  get_type_string(Preset::Type type);
@@ -473,8 +473,8 @@ public:
     void            update_after_user_presets_loaded();
     //BBS: get user presets
     int  get_user_presets(PresetBundle *preset_bundle, std::vector<Preset> &result_presets);
-    void set_sync_info_and_save(std::string name, std::string setting_id, std::string syncinfo, long long update_time);
-    bool need_sync(std::string name, std::string setting_id, long long update_time);
+    void set_sync_info_and_save(std::string name, std::string setting_id, std::string syncinfo, const std::string& update_time);
+    bool need_sync(std::string name, std::string setting_id, const std::string& update_time);
 
     //BBS: add function to generate differed preset for save
     //the pointer should be freed by the caller

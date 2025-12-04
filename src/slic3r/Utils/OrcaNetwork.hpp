@@ -10,8 +10,46 @@
 #include <mutex>
 #include <functional>
 #include <memory>
+#include <vector>
+#include <nlohmann/json.hpp>
 
 namespace Slic3r {
+
+// Forward declaration
+class AppConfig;
+
+// ============================================================================
+// Sync Protocol Data Structures (per Orca Cloud Sync Protocol Specification)
+// ============================================================================
+
+// Represents an upserted profile from the server during sync pull
+struct ProfileUpsert {
+    std::string id;
+    nlohmann::json content;
+    std::string updated_at;  // ISO 8601 timestamp
+};
+
+// Response from sync pull endpoint
+struct SyncPullResponse {
+    std::string next_cursor;              // New sync cursor (ISO 8601 timestamp)
+    std::vector<ProfileUpsert> upserts;   // Profiles to create/update
+    std::vector<std::string> deletes;     // Tombstone IDs to delete locally
+};
+
+// Result of a sync push operation
+struct SyncPushResult {
+    bool success;
+    int http_code;                        // 200 = success, 409 = conflict, etc.
+    std::string new_updated_at;           // On success: new timestamp for the profile
+    ProfileUpsert server_version;         // On 409 conflict: current server version
+    std::string error_message;
+};
+
+// Sync state persisted to JSON config file
+// Note: Per-profile timestamps (updated_time) are stored in .info files as-is from server
+struct SyncState {
+    std::string last_sync_timestamp;  // Global sync cursor (ISO 8601)
+};
 
 /**
  * OrcaNetwork - A drop-in replacement for NetworkAgent
@@ -34,6 +72,10 @@ public:
     // Constructor/Destructor
     explicit OrcaNetwork(std::string log_dir);
     ~OrcaNetwork() override;
+
+    // Configuration - call after construction to override default URLs
+    // Reads orca_api_url, orca_auth_url, orca_pub_key from AppConfig if set
+    void configure_urls(AppConfig* app_config);
 
     // Lifecycle methods (INetworkAgent interface)
     int init_log() override;
@@ -84,12 +126,38 @@ public:
     std::string build_login_info() override;
 
     // Settings sync (INetworkAgent interface)
+    // These methods use values_map["updated_time"] for Optimistic Concurrency Control:
+    //   - Input: Pass current Preset::updated_time for version checking (empty for new profiles)
+    //   - Output: On success, values_map["updated_time"] is updated with new server timestamp
+    //             Caller MUST store this in Preset::updated_time for future sync operations
     int get_user_presets(std::map<std::string, std::map<std::string, std::string>>* user_presets) override;
     std::string request_setting_id(std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code) override;
     int put_setting(std::string setting_id, std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code) override;
     int get_setting_list(std::string bundle_version, ProgressFn pro_fn = nullptr, WasCancelledFn cancel_fn = nullptr) override;
     int get_setting_list2(std::string bundle_version, CheckFn chk_fn, ProgressFn pro_fn = nullptr, WasCancelledFn cancel_fn = nullptr) override;
     int delete_setting(std::string setting_id) override;
+
+    // New Sync Protocol (per Orca Cloud Sync Protocol Specification)
+    // Pull: GET /api/v1/sync/pull?cursor={timestamp}
+    int sync_pull(
+        std::function<void(const SyncPullResponse&)> on_success,
+        std::function<void(int http_code, const std::string& error)> on_error
+    );
+
+    // Push: POST /api/v1/sync/push with optimistic concurrency control
+    // original_updated_at: Pass Preset::updated_time directly for OCC (empty for new profiles)
+    // Returns: SyncPushResult with new_updated_at - caller must store it in Preset::updated_time as-is
+    SyncPushResult sync_push(
+        const std::string& profile_id,
+        const nlohmann::json& content,
+        const std::string& original_updated_at = ""
+    );
+
+    // Sync state management (global cursor only - per-profile timestamps are in .info files)
+    void load_sync_state();
+    void save_sync_state();
+    void clear_sync_state();
+    const SyncState& get_sync_state() const { return sync_state; }
 
     // Extra features (INetworkAgent interface)
     int set_extra_http_header(std::map<std::string, std::string> extra_headers) override;
@@ -201,11 +269,14 @@ private:
 
     // Member variables - state
     bool is_connected;
-    bool auth_lane_enabled;
     bool enable_track;
     bool multi_machine_enabled;
     std::string selected_machine;
     std::unique_ptr<AuthManager> auth_manager;
+
+    // Sync state (persisted to {config_dir}/{user_id}/sync_state - plain text file)
+    SyncState sync_state;
+    std::string sync_state_path;
 
     // Callbacks
 OnMsgArrivedFn on_ssdp_msg_fn;
@@ -223,7 +294,7 @@ QueueOnMainFn queue_on_main_fn;
 OnServerErrFn on_server_err_fn;
 
     // Thread safety
-    std::recursive_mutex state_mutex;
+    mutable std::recursive_mutex state_mutex;
 };
 
 } // namespace Slic3r

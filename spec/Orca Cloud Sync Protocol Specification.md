@@ -25,12 +25,15 @@ Stores only the current, active version of the configuration. This is the table 
 
 ```SQL
 CREATE TABLE profiles (
-    id UUID PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     content JSONB NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT NOW(), -- Acts as Sync Cursor & Optimistic Lock
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- Index for sync queries filtering by user and time
+CREATE INDEX idx_profiles_sync ON profiles (user_id, updated_at);
 ```
 
 ### 2.2 History Archive Table (`profile_versions`)
@@ -40,10 +43,11 @@ Stores the previous 9 versions. This table is **never** queried during standard 
 
 ```sql
 CREATE TABLE profile_versions (
-    version_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    version_id BIGSERIAL PRIMARY KEY,
     profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     content JSONB NOT NULL,            -- Snapshot of the config
     recorded_at TIMESTAMPTZ NOT NULL,  -- The 'updated_at' of this version
+    created_at TIMESTAMPTZ DEFAULT NOW(),
     
     -- Index for fast retrieval and pruning
     CONSTRAINT fk_profile FOREIGN KEY (profile_id) REFERENCES profiles (id)
@@ -60,11 +64,13 @@ Used to propagate deletion events to other devices.
 
 ```sql
 CREATE TABLE tombstones (
+    id BIGSERIAL PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     entity_id UUID NOT NULL,
     entity_type VARCHAR(50) NOT NULL,
     deleted_at TIMESTAMPTZ DEFAULT NOW()
 );
-CREATE INDEX idx_tombstone_sync ON tombstones (deleted_at);
+CREATE INDEX idx_tombstone_sync ON tombstones (user_id, deleted_at);
 ```
 
 ---
@@ -113,8 +119,8 @@ Executes **AFTER DELETE** on the `profiles` table.
 ```sql
 CREATE OR REPLACE FUNCTION func_create_tombstone() RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO tombstones (entity_id, entity_type, deleted_at)
-    VALUES (OLD.id, 'profile', NOW());
+    INSERT INTO tombstones (user_id, entity_id, entity_type, deleted_at)
+    VALUES (OLD.user_id, OLD.id, 'profile', NOW());
     RETURN OLD;
 END;
 $$ LANGUAGE plpgsql;
@@ -145,7 +151,9 @@ The client application must maintain two distinct types of timestamp state:
     
 - **Purpose:** Stores the exact timestamp of the file version currently on the local disk.
     
-- **Behavior:** Required payload during **Push** to prove the modification is based on the latest server version.
+- **Behavior:** 
+    - **On Pull:** Updated from the server's `updated_at`.
+    - **On Push:** Sent as `original_updated_at` to prove the modification is based on the latest server version. If creating a new file, this token is null.
     
 
 ---
@@ -194,25 +202,33 @@ The client application must maintain two distinct types of timestamp state:
       "id": "p1",
       "content": { ... },
       "original_updated_at": "2025-11-28T10:00:00.000000Z" 
-      // ^ MUST match the timestamp currently stored in DB
+      // ^ Optional. 
+      // Present = Update existing record (must match DB). 
+      // Absent/Null = Insert new record.
     }
     ```
     
-- **Server Logic (SQL):**
-    
-    SQL
-    
-    ```json
-    UPDATE profiles 
-    SET content = $content 
-    WHERE id = $id AND updated_at = $original_updated_at;
-    ```
-    
+- **Server Logic:**
+
+    1. **If `original_updated_at` is provided (Update Flow):**
+       - Attempt SQL: `UPDATE profiles SET content = $content, updated_at = NOW() WHERE id = $id AND updated_at = $original_updated_at RETURNING *;`
+       - If 0 rows returned:
+         - Fetch current record by ID.
+         - If record exists: **409 Conflict** (Client is stale). Return server's `current`.
+         - If record missing: **409 Conflict** (Record deleted on server). Return `null`.
+
+    2. **If `original_updated_at` is missing (Insert Flow):**
+       - Attempt SQL: `INSERT INTO profiles (id, content) VALUES ($id, $content) RETURNING *;`
+       - If PK violation (ID exists):
+         - **409 Conflict** (ID collision). Return server's `current`.
+
 - **Response Scenarios:**
     
-    - **200 OK:** Update successful. Returns `new_updated_at`. Client updates local state.
+    - **200 OK:** Operation successful. Returns `new_updated_at`. Client updates local state.
         
-    - **409 Conflict:** Server version is newer. Returns server's current version. Client must merge or overwrite, then retry push using the _new_ server timestamp.
+    - **409 Conflict:** Operation failed.
+        - **Stale/Collision:** Returns server's current version (`{ "id": ..., "updated_at": ... }`). Client must merge or overwrite, then retry push using the *new* server timestamp.
+        - **Deleted:** Returns `null`. Client must decide to re-create (push without token) or accept deletion.
         
 
 ---

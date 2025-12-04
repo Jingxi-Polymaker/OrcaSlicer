@@ -314,6 +314,11 @@ void AuthManager::set_api_base_url(const std::string& api_base)
     api_base_url = api_base;
 }
 
+void AuthManager::set_auth_base_url(const std::string& auth_base)
+{
+    auth_base_url = auth_base;
+}
+
 void AuthManager::set_session_handler(SessionHandler handler)
 {
     session_handler = std::move(handler);
