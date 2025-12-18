@@ -1652,9 +1652,7 @@ bool PresetCollection::need_sync(std::string name, std::string setting_id, const
     lock();
     auto preset = find_preset(name, false, true);
     // Convert to millis for comparison
-    long long update_millis = Slic3r::Utils::iso8601_to_millis(update_time);
-    long long preset_millis = preset ? Slic3r::Utils::iso8601_to_millis(preset->updated_time) : -1;
-    bool need = preset == nullptr || preset->setting_id != setting_id || preset_millis < update_millis;
+    bool need = preset == nullptr || preset->setting_id != setting_id || preset->updated_time < update_time;
     unlock();
     return need;
 }
@@ -1796,10 +1794,8 @@ bool PresetCollection::load_user_preset(std::string name, std::map<std::string, 
     if ((iter != m_presets.end()) && (iter->name == name)) {
         BOOST_LOG_TRIVIAL(info) << "Found the Preset locally: " << name;
         //BBS: we should compare the time between cloud and local (convert to millis for comparison)
-        long long cloud_millis = Slic3r::Utils::iso8601_to_millis(cloud_update_time);
-        long long local_millis = Slic3r::Utils::iso8601_to_millis(iter->updated_time);
-        if ((cloud_millis <= 0) || (cloud_millis <= local_millis)) {
-            if (cloud_millis < local_millis)
+        if ((cloud_update_time.empty()) || (cloud_update_time <= iter->updated_time)) {
+            if (cloud_update_time < iter->updated_time)
                 iter->sync_info = "update";
             else
                 iter->sync_info.clear();

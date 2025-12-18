@@ -971,18 +971,18 @@ void GUI_App::post_init()
     }
 
     // Start preset sync after project opened, otherwise we could have preset change during project opening which could cause crash 
-    if (app_config->get("sync_user_preset") == "true") {
-        // BBS loading user preset
-        // Always async, not such startup step
-        // BOOST_LOG_TRIVIAL(info) << "Loading user presets...";
-        // scrn->SetText(_L("Loading user presets..."));
-        if (m_agent) {
-            start_sync_user_preset();
-        }
-        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " sync_user_preset: true";
-    } else {
-        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " sync_user_preset: false";
-    }
+    // if (app_config->get("sync_user_preset") == "true") {
+    //     // BBS loading user preset
+    //     // Always async, not such startup step
+    //     // BOOST_LOG_TRIVIAL(info) << "Loading user presets...";
+    //     // scrn->SetText(_L("Loading user presets..."));
+    //     if (m_agent) {
+    //         start_sync_user_preset();
+    //     }
+    //     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " sync_user_preset: true";
+    // } else {
+    //     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " sync_user_preset: false";
+    // }
 
     // The extra CallAfter() is needed because of Mac, where this is the only way
     // to popup a modal dialog on start without screwing combo boxes.
@@ -1633,11 +1633,11 @@ void GUI_App::init_networking_callbacks()
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__<< boost::format(": enter, m_agent=%1%")%m_agent;
     if (m_agent) {
         //set callbacks
-        if(m_agent->get_version() != "orca_network") {
+        // if(m_agent->get_version() != "orca_network") {
             m_agent->set_on_user_login_fn([this](int online_login, bool login) {
                 GUI::wxGetApp().request_user_handle(online_login);
             });
-        }
+        // }
 
         m_agent->set_server_callback([](std::string url, int status) {
             BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(": server_callback, url=%1%, status=%2%") % url % status;
@@ -4282,24 +4282,24 @@ void GUI_App::on_http_error(wxCommandEvent &evt)
     }
 
     // request login
-    if (status == 401) {
-        if (m_agent) {
-            if (m_agent->is_user_login()) {
-                this->request_user_logout();
+    // if (status == 401) {
+    //     if (m_agent) {
+    //         if (m_agent->is_user_login()) {
+    //             this->request_user_logout();
 
-                if (!m_show_http_errpr_msgdlg) {
-                    MessageDialog msg_dlg(nullptr, _L("Login information expired. Please login again."), "", wxAPPLY | wxOK);
-                    m_show_http_errpr_msgdlg = true;
-                    auto modal_result = msg_dlg.ShowModal();
-                    if (modal_result == wxOK || modal_result == wxCLOSE) {
-                        m_show_http_errpr_msgdlg = false;
-                        return;
-                    }
-                }
-            }
-        }
-        return;
-    }
+    //             if (!m_show_http_errpr_msgdlg) {
+    //                 MessageDialog msg_dlg(nullptr, _L("Login information expired. Please login again."), "", wxAPPLY | wxOK);
+    //                 m_show_http_errpr_msgdlg = true;
+    //                 auto modal_result = msg_dlg.ShowModal();
+    //                 if (modal_result == wxOK || modal_result == wxCLOSE) {
+    //                     m_show_http_errpr_msgdlg = false;
+    //                     return;
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     return;
+    // }
 }
 
 void GUI_App::enable_user_preset_folder(bool enable)
@@ -4340,7 +4340,6 @@ void GUI_App::on_user_login_handle(wxCommandEvent &evt)
     if (!m_agent) { return; }
 
     int online_login = evt.GetInt();
-    m_agent->connect_server();
     // get machine list
     DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
     if (!dev) return;
@@ -5173,9 +5172,7 @@ void GUI_App::sync_preset(Preset* preset)
             if (!new_setting_id.empty()) {
                 setting_id = new_setting_id;
                 result = 0;
-                auto update_time_str = values_map[BBL_JSON_KEY_UPDATE_TIME];
-                if (!update_time_str.empty())
-                    update_time = std::atoll(update_time_str.c_str());
+                update_time = values_map[BBL_JSON_KEY_UPDATE_TIME];
             }
             else {
                 BOOST_LOG_TRIVIAL(trace) << "[sync_preset]init: request_setting_id failed, http code "<<http_code;
@@ -5202,9 +5199,7 @@ void GUI_App::sync_preset(Preset* preset)
             if (!new_setting_id.empty()) {
                 setting_id = new_setting_id;
                 result = 0;
-                auto update_time_str = values_map[BBL_JSON_KEY_UPDATE_TIME];
-                if (!update_time_str.empty())
-                    update_time = std::atoll(update_time_str.c_str());
+                update_time = values_map[BBL_JSON_KEY_UPDATE_TIME];
             } else {
                 BOOST_LOG_TRIVIAL(trace) << "[sync_preset]create: request_setting_id failed, http code "<<http_code;
                 // do not post new preset this time if http code >= 400
@@ -5234,9 +5229,7 @@ void GUI_App::sync_preset(Preset* preset)
                         updated_info = "hold";
                         BOOST_LOG_TRIVIAL(error) << "[sync_preset] put setting_id = " << setting_id << " failed, http_code = " << http_code;
                     } else {
-                        auto update_time_str = values_map[BBL_JSON_KEY_UPDATE_TIME];
-                        if (!update_time_str.empty())
-                            update_time = std::atoll(update_time_str.c_str());
+                        update_time = values_map[BBL_JSON_KEY_UPDATE_TIME];
                     }
                 }
 
@@ -5339,10 +5332,7 @@ void GUI_App::start_sync_user_preset(bool with_progress_dlg)
                 auto type = info[BBL_JSON_KEY_TYPE];
                 auto name = info[BBL_JSON_KEY_NAME];
                 auto setting_id = info[BBL_JSON_KEY_SETTING_ID];
-                auto update_time_str = info[BBL_JSON_KEY_UPDATE_TIME];
-                std::string update_time = "";
-                if (!update_time_str.empty())
-                    update_time = std::atoll(update_time_str.c_str());
+                std::string update_time = info[BBL_JSON_KEY_UPDATE_TIME];
                 if (type == "filament") {
                     return preset_bundle->filaments.need_sync(name, setting_id, update_time);
                 } else if (type == "print") {

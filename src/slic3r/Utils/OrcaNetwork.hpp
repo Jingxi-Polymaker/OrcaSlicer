@@ -25,8 +25,10 @@ class AppConfig;
 // Represents an upserted profile from the server during sync pull
 struct ProfileUpsert {
     std::string id;
+    std::string name;
     nlohmann::json content;
     std::string updated_at;  // ISO 8601 timestamp
+    std::string created_at;  // ISO 8601 timestamp
 };
 
 // Response from sync pull endpoint
@@ -41,7 +43,8 @@ struct SyncPushResult {
     bool success;
     int http_code;                        // 200 = success, 409 = conflict, etc.
     std::string new_updated_at;           // On success: new timestamp for the profile
-    ProfileUpsert server_version;         // On 409 conflict: current server version
+    ProfileUpsert server_version;         // On 409 conflict: current server version (metadata only, no content)
+    bool server_deleted;                  // On 409 conflict: true if record was deleted on server (response is null)
     std::string error_message;
 };
 
@@ -145,10 +148,12 @@ public:
     );
 
     // Push: POST /api/v1/sync/push with optimistic concurrency control
+    // name: Profile file name (required per spec)
     // original_updated_at: Pass Preset::updated_time directly for OCC (empty for new profiles)
     // Returns: SyncPushResult with new_updated_at - caller must store it in Preset::updated_time as-is
     SyncPushResult sync_push(
         const std::string& profile_id,
+        const std::string& name,
         const nlohmann::json& content,
         const std::string& original_updated_at = ""
     );

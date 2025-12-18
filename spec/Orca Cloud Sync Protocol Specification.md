@@ -200,6 +200,7 @@ The client application must maintain two distinct types of timestamp state:
     ```json
     {
       "id": "p1",
+      "name": "orca_slicer_profile.json",
       "content": { ... },
       "original_updated_at": "2025-11-28T10:00:00.000000Z" 
       // ^ Optional. 
@@ -211,23 +212,24 @@ The client application must maintain two distinct types of timestamp state:
 - **Server Logic:**
 
     1. **If `original_updated_at` is provided (Update Flow):**
-       - Attempt SQL: `UPDATE profiles SET content = $content, updated_at = NOW() WHERE id = $id AND updated_at = $original_updated_at RETURNING *;`
+       - Attempt SQL: `UPDATE profiles SET content = $content, name = $name WHERE id = $id AND updated_at = $original_updated_at RETURNING *;`  
+         _Note: `updated_at` is refreshed by the `trg_profiles_archive_and_prune` trigger **only when `content` changes**. If the payload only changes `name`, the timestamp stays the same and the change will not be pulled by other devices._
        - If 0 rows returned:
          - Fetch current record by ID.
          - If record exists: **409 Conflict** (Client is stale). Return server's `current`.
          - If record missing: **409 Conflict** (Record deleted on server). Return `null`.
 
     2. **If `original_updated_at` is missing (Insert Flow):**
-       - Attempt SQL: `INSERT INTO profiles (id, content) VALUES ($id, $content) RETURNING *;`
+       - Attempt SQL: `INSERT INTO profiles (id, name, content) VALUES ($id, $name, $content) RETURNING *;`
        - If PK violation (ID exists):
          - **409 Conflict** (ID collision). Return server's `current`.
 
 - **Response Scenarios:**
     
-    - **200 OK:** Operation successful. Returns `new_updated_at`. Client updates local state.
+    - **200 OK:** Operation successful. Returns profile metadata (id, user_id, name, timestamps) but **excludes content** to save bandwidth. Client updates local state.
         
     - **409 Conflict:** Operation failed.
-        - **Stale/Collision:** Returns server's current version (`{ "id": ..., "updated_at": ... }`). Client must merge or overwrite, then retry push using the *new* server timestamp.
+        - **Stale/Collision:** Returns server's current version metadata (`{ "id": ..., "user_id": ..., "name": ..., "updated_at": ..., "created_at": ... }`) **excluding content**. Client must fetch the full profile via `pull` if merging is required, or simply retry the push with the new timestamp to overwrite.
         - **Deleted:** Returns `null`. Client must decide to re-create (push without token) or accept deletion.
         
 

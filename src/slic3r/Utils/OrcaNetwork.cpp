@@ -2,6 +2,7 @@
 #include "Http.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/AppConfig.hpp"
+#include "libslic3r/Preset.hpp"
 #include <boost/log/trivial.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
@@ -43,7 +44,7 @@ constexpr const char* CONFIG_ORCA_API_URL = "orca_api_url";
 constexpr const char* CONFIG_ORCA_AUTH_URL = "orca_auth_url";
 constexpr const char* CONFIG_ORCA_PUB_KEY = "orca_pub_key";
 
-const std::chrono::seconds TOKEN_REFRESH_SKEW{90};
+const std::chrono::seconds TOKEN_REFRESH_SKEW{900};
 
 std::map<std::string, std::string> strip_apikey(const std::map<std::string, std::string>& headers)
 {
@@ -382,7 +383,7 @@ int OrcaNetwork::set_user_session(std::string token, std::string user_id, std::s
 
     // Initialize per-user sync state path: config_dir/user_id/sync_state
     if (!config_dir.empty() && !user_id.empty()) {
-        std::string user_dir = config_dir + "/" + user_id;
+        std::string user_dir = config_dir + "/user/" + user_id;
         // Create user directory if it doesn't exist
         boost::filesystem::path user_path(user_dir);
         if (!boost::filesystem::exists(user_path)) {
@@ -765,20 +766,21 @@ std::string OrcaNetwork::request_setting_id(std::string name, std::map<std::stri
     if (values_map && !values_map->empty()) {
         for (const auto& pair : *values_map) {
             // Skip updated_time - it's metadata, not content
-            if (pair.first == "updated_time") continue;
+            if (pair.first == BBL_JSON_KEY_UPDATE_TIME) continue;
             content[pair.first] = pair.second;
         }
     }
 
     // Use sync_push to create the profile (no original_updated_at for new profiles per spec)
-    SyncPushResult result = sync_push(profile_id, content);
+    // Pass name as the profile file name per updated spec
+    SyncPushResult result = sync_push(profile_id, name, content);
 
     if (http_code) *http_code = result.http_code;
 
     if (result.success) {
         // Return new_updated_at via values_map so caller can store it in Preset::updated_time
         if (values_map && !result.new_updated_at.empty()) {
-            (*values_map)["updated_time"] = result.new_updated_at;
+            (*values_map)[BBL_JSON_KEY_UPDATE_TIME] = result.new_updated_at;
         }
         BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Created preset - setting_id=" << profile_id
                                 << ", new_updated_at=" << result.new_updated_at;
@@ -803,7 +805,7 @@ int OrcaNetwork::put_setting(std::string setting_id, std::string name, std::map<
     // If present, server will verify version before update. If absent, treated as insert.
     std::string original_updated_at;
     if (values_map) {
-        auto it = values_map->find("updated_time");
+        auto it = values_map->find(BBL_JSON_KEY_UPDATE_TIME);
         if (it != values_map->end()) {
             original_updated_at = it->second;
         }
@@ -816,31 +818,40 @@ int OrcaNetwork::put_setting(std::string setting_id, std::string name, std::map<
     if (values_map && !values_map->empty()) {
         for (const auto& pair : *values_map) {
             // Skip updated_time - it's used for OCC, not as content
-            if (pair.first == "updated_time") continue;
+            if (pair.first == BBL_JSON_KEY_UPDATE_TIME) continue;
             content[pair.first] = pair.second;
         }
     }
 
     // Use sync_push to update the profile with OCC
-    SyncPushResult result = sync_push(setting_id, content, original_updated_at);
+    // Pass name as the profile file name per updated spec
+    SyncPushResult result = sync_push(setting_id, name, content, original_updated_at);
 
     if (http_code) *http_code = result.http_code;
 
     if (result.success) {
         // Return new_updated_at via values_map so caller can store it in Preset::updated_time
         if (values_map && !result.new_updated_at.empty()) {
-            (*values_map)["updated_time"] = result.new_updated_at;
+            (*values_map)[BBL_JSON_KEY_UPDATE_TIME] = result.new_updated_at;
         }
         BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: Updated preset successfully - new_updated_at=" << result.new_updated_at;
         return BAMBU_NETWORK_SUCCESS;
     }
 
-    // Handle conflict (409) - server has newer version
+    // Handle conflict (409) - per spec section 5.2
     if (result.http_code == 409) {
-        BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: put_setting conflict - server has newer version";
-        // Return server's current updated_at so caller can update local state and retry
-        if (values_map && !result.server_version.updated_at.empty()) {
-            (*values_map)["updated_time"] = result.server_version.updated_at;
+        if (result.server_deleted) {
+            // Record was deleted on server - caller must decide to re-create or accept deletion
+            BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: put_setting conflict - record was deleted on server";
+            if (values_map) {
+                (*values_map)["deleted"] = "true";
+            }
+        } else {
+            // Server has newer version - return updated_at so caller can update local state and retry
+            BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: put_setting conflict - server has newer version";
+            if (values_map && !result.server_version.updated_at.empty()) {
+                (*values_map)[BBL_JSON_KEY_UPDATE_TIME] = result.server_version.updated_at;
+            }
         }
     }
 
@@ -884,8 +895,8 @@ int OrcaNetwork::get_setting_list2(std::string bundle_version, CheckFn chk_fn, P
                         // Convert profile to map for CheckFn
                         if (chk_fn) {
                             std::map<std::string, std::string> preset_info;
-                            preset_info["setting_id"] = upsert.id;
-                            preset_info["updated_at"] = upsert.updated_at;
+                            preset_info[BBL_JSON_KEY_SETTING_ID] = upsert.id;
+                            preset_info[BBL_JSON_KEY_UPDATE_TIME] = upsert.updated_at;
 
                             // Flatten JSON content to map
                             if (upsert.content.is_object()) {
@@ -946,7 +957,7 @@ int OrcaNetwork::get_setting_list2(std::string bundle_version, CheckFn chk_fn, P
                         // Notify via CheckFn with a special marker for deletion
                         if (chk_fn) {
                             std::map<std::string, std::string> preset_info;
-                            preset_info["setting_id"] = deleted_id;
+                            preset_info[BBL_JSON_KEY_SETTING_ID] = deleted_id;
                             preset_info["deleted"] = "true";
 
                             QueueOnMainFn queue_fn;
@@ -1172,7 +1183,9 @@ int OrcaNetwork::sync_pull(
             for (const auto& item : j["upserts"]) {
                 ProfileUpsert upsert;
                 upsert.id = item.value("id", "");
-                upsert.updated_at = item.value("updated_at", "");
+                upsert.name = item.value("name", "");
+                upsert.updated_at = item.value(BBL_JSON_KEY_UPDATE_TIME, "");
+                upsert.created_at = item.value("created_at", "");
                 if (item.contains("content")) {
                     upsert.content = item["content"];
                 }
@@ -1216,15 +1229,18 @@ int OrcaNetwork::sync_pull(
 
 SyncPushResult OrcaNetwork::sync_push(
     const std::string& profile_id,
+    const std::string& name,
     const nlohmann::json& content,
     const std::string& original_updated_at)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: sync_push - profile_id=" << profile_id
+                            << ", name=" << name
                             << ", original_updated_at=" << (original_updated_at.empty() ? "(new)" : original_updated_at);
 
     SyncPushResult result;
     result.success = false;
     result.http_code = 0;
+    result.server_deleted = false;
 
     if (!is_user_login()) {
         BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: Not logged in";
@@ -1239,6 +1255,7 @@ SyncPushResult OrcaNetwork::sync_push(
         // Build request body per spec
         nlohmann::json request_body;
         request_body["id"] = profile_id;
+        request_body["name"] = name;
         request_body["content"] = content;
         if (!original_updated_at.empty()) {
             request_body["original_updated_at"] = original_updated_at;
@@ -1251,20 +1268,27 @@ SyncPushResult OrcaNetwork::sync_push(
         result.http_code = http_code;
 
         if (net_result == BAMBU_NETWORK_SUCCESS && http_code == 200) {
-            // Success - parse new timestamp from server
+            // Success - parse profile metadata from server (per spec: id, user_id, name, updated_at, created_at - no content)
             try {
                 nlohmann::json resp_json = nlohmann::json::parse(response);
-                result.new_updated_at = resp_json.value("new_updated_at", resp_json.value("updated_at", ""));
+                BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: sync_push response - " << resp_json.dump();
+
+                // Per spec section 5.2: Response returns profile metadata with updated_at
+                result.new_updated_at = resp_json.value(BBL_JSON_KEY_UPDATE_TIME, "");
 
                 if (!result.new_updated_at.empty()) {
                     // Caller must store result.new_updated_at in Preset::updated_time as-is
                     result.success = true;
-                    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: sync_push successful - new_updated_at=" << result.new_updated_at;
+                    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: sync_push successful"
+                                            << " - id=" << resp_json.value("id", "")
+                                            << ", name=" << resp_json.value("name", "")
+                                            << ", updated_at=" << result.new_updated_at
+                                            << ", created_at=" << resp_json.value("created_at", "");
                 } else {
                     // Server returned 200 but no timestamp - cannot maintain optimistic concurrency
-                    BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: sync_push failed - server returned 200 but no timestamp in response";
+                    BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: sync_push failed - server returned 200 but no updated_at in response";
                     result.success = false;
-                    result.error_message = "Server response missing required timestamp";
+                    result.error_message = "Server response missing required updated_at timestamp";
                 }
             } catch (const std::exception& e) {
                 BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: sync_push failed - response parse error: " << e.what();
@@ -1275,20 +1299,43 @@ SyncPushResult OrcaNetwork::sync_push(
         }
 
         if (http_code == 409) {
-            // Conflict - parse server version
-            BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: sync_push conflict (409) - server has newer version";
+            // Conflict - per spec section 5.2:
+            // - Stale/Collision: Returns server's current version metadata (no content)
+            // - Deleted: Returns null - record was deleted on server
             result.success = false;
-            result.error_message = "Conflict: server has newer version";
 
             try {
-                nlohmann::json resp_json = nlohmann::json::parse(response);
-                result.server_version.id = resp_json.value("id", profile_id);
-                result.server_version.updated_at = resp_json.value("updated_at", "");
-                if (resp_json.contains("content")) {
-                    result.server_version.content = resp_json["content"];
+                // Check for null response (record deleted on server)
+                // Response body could be "null", empty, or whitespace-only
+                std::string trimmed = response;
+                trimmed.erase(0, trimmed.find_first_not_of(" \t\n\r"));
+                trimmed.erase(trimmed.find_last_not_of(" \t\n\r") + 1);
+
+                if (trimmed.empty() || trimmed == "null") {
+                    // Record was deleted on server
+                    BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: sync_push conflict (409) - record was deleted on server";
+                    result.server_deleted = true;
+                    result.error_message = "Conflict: record was deleted on server";
+                } else {
+                    // Stale/collision - parse server's current version metadata (no content per spec)
+                    BOOST_LOG_TRIVIAL(warning) << "OrcaNetwork: sync_push conflict (409) - server has newer version";
+                    result.error_message = "Conflict: server has newer version";
+
+                    nlohmann::json resp_json = nlohmann::json::parse(response);
+                    result.server_version.id = resp_json.value("id", profile_id);
+                    result.server_version.name = resp_json.value("name", "");
+                    result.server_version.updated_at = resp_json.value(BBL_JSON_KEY_UPDATE_TIME, "");
+                    result.server_version.created_at = resp_json.value("created_at", "");
+                    // Note: content is NOT included in 409 response per spec
+
+                    BOOST_LOG_TRIVIAL(info) << "OrcaNetwork: sync_push conflict server version"
+                                            << " - id=" << result.server_version.id
+                                            << ", name=" << result.server_version.name
+                                            << ", updated_at=" << result.server_version.updated_at;
                 }
             } catch (const std::exception& e) {
                 BOOST_LOG_TRIVIAL(error) << "OrcaNetwork: sync_push conflict response parse error - " << e.what();
+                result.error_message = "Conflict: failed to parse server response";
             }
             return result;
         }
@@ -1361,8 +1408,8 @@ bool OrcaNetwork::attempt_refresh_after_unauthorized(const std::string& reason)
     if (auth_manager->refresh_from_storage(reason + "_retry", false)) return true;
 
     BOOST_LOG_TRIVIAL(warning) << "[auth] event=refresh result=failure source=" << reason << " action=logout";
-    auth_manager->clear_session();
-    invoke_user_login_callback(0, false);
+    // auth_manager->clear_session();
+    // invoke_user_login_callback(0, false);
     return false;
 }
 
@@ -1401,6 +1448,7 @@ int OrcaNetwork::http_get(const std::string& path, std::string* response_body, u
             if (disable_cache) {
                 http.header("Cache-Control", "no-store");
             }
+            http.print();
 
             http.on_complete([&](std::string resp_body, unsigned resp_status) {
                 result.success = true;
@@ -1722,8 +1770,11 @@ int OrcaNetwork::http_delete(const std::string& path, std::string* response_body
 
 void OrcaNetwork::invoke_user_login_callback(int online_login, bool login)
 {
-OnUserLoginFn callback;
-QueueOnMainFn queue_fn;
+    if(!online_login || online_login != 1)
+        return;
+
+    OnUserLoginFn callback;
+    QueueOnMainFn queue_fn;
 
     {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);

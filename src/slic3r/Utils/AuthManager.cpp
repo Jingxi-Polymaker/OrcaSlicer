@@ -41,6 +41,9 @@ namespace pt = boost::property_tree;
 namespace Slic3r {
 namespace {
 
+constexpr const char* SECRET_STORE_SERVICE = "OrcaSlicer/Auth";
+constexpr const char* SECRET_STORE_USER    = "orca_refresh_token";
+
 std::string base64url_encode(const std::vector<unsigned char>& data)
 {
     std::string out;
@@ -285,7 +288,6 @@ AuthManager::AuthManager(std::string auth_base_url)
     pkce_bundle.loopback_port = choose_loopback_port();
     update_redirect_uri();
     regenerate_pkce();
-    ensure_secret_store();
     compute_fallback_path();
 }
 
@@ -396,11 +398,11 @@ void AuthManager::persist_refresh_token(const std::string& token)
         return;
     }
 
-    ensure_secret_store();
     bool stored = false;
-    if (secret_store && secret_store->IsOk()) {
+    wxSecretStore store = wxSecretStore::GetDefault();
+    if (store.IsOk()) {
         wxSecretValue secret(wxString::FromUTF8(token.c_str()));
-        if (secret_store->Save("OrcaSlicer", "orca_refresh_token", secret)) {
+        if (store.Save(SECRET_STORE_SERVICE, SECRET_STORE_USER, secret)) {
             stored = true;
         } else {
             BOOST_LOG_TRIVIAL(warning) << "AuthManager: wxSecretStore save failed, will attempt encrypted-file fallback";
@@ -458,12 +460,11 @@ void AuthManager::persist_refresh_token(const std::string& token)
 bool AuthManager::load_refresh_token(std::string& out_token)
 {
     out_token.clear();
-    ensure_secret_store();
-
-    if (secret_store && secret_store->IsOk()) {
-        wxString username = "orca_refresh_token";
+    wxSecretStore store = wxSecretStore::GetDefault();
+    if (store.IsOk()) {
+        wxString username;
         wxSecretValue secret;
-        if (secret_store->Load("OrcaSlicer", username, secret) && secret.IsOk()) {
+        if (store.Load(SECRET_STORE_SERVICE, username, secret) && secret.IsOk()) {
             out_token.assign(static_cast<const char*>(secret.GetData()), secret.GetSize());
             if (!out_token.empty()) {
                 BOOST_LOG_TRIVIAL(info) << "AuthManager: loaded refresh token from wxSecretStore";
@@ -519,9 +520,9 @@ bool AuthManager::load_refresh_token(std::string& out_token)
 
 void AuthManager::clear_refresh_token()
 {
-    ensure_secret_store();
-    if (secret_store && secret_store->IsOk()) {
-        secret_store->Delete("OrcaSlicer");
+    wxSecretStore store = wxSecretStore::GetDefault();
+    if (store.IsOk()) {
+        store.Delete(SECRET_STORE_SERVICE);
     }
 
     compute_fallback_path();
@@ -640,16 +641,17 @@ void AuthManager::try_refresh_async(const std::string& refresh_token)
 
 bool AuthManager::refresh_session_with_token(const std::string& refresh_token)
 {
-    pt::ptree req;
-    req.put("grant_type", "refresh_token");
-    req.put("refresh_token", refresh_token);
-    std::stringstream body_ss;
-    pt::write_json(body_ss, req);
+    std::string body = "{\"refresh_token\":\"" + refresh_token + "\"}";
 
-    std::string response;
+    std::string url = auth_base_url + ORCA_TOKEN_PATH + "?grant_type=refresh_token";
+    BOOST_LOG_TRIVIAL(debug) << "AuthManager: refresh request - token_length=" << refresh_token.size() << ", url=" << url;
+
+    std::string  response;
     unsigned int http_code = 0;
-    if (!http_post_token(body_ss.str(), &response, &http_code) || http_code >= 400) {
-        BOOST_LOG_TRIVIAL(warning) << "AuthManager: token refresh failed - http_code=" << http_code;
+    if (!http_post_token(body, &response, &http_code, url) || http_code >= 400) {
+        std::string truncated_response = response.size() > 200 ? response.substr(0, 200) + "..." : response;
+        BOOST_LOG_TRIVIAL(warning) << "AuthManager: token refresh failed - http_code=" << http_code
+                                   << ", response_body=" << truncated_response;
         return false;
     }
 
@@ -660,16 +662,26 @@ bool AuthManager::refresh_session_with_token(const std::string& refresh_token)
     return true;
 }
 
-bool AuthManager::http_post_token(const std::string& body, std::string* response_body, unsigned int* http_code)
+bool AuthManager::http_post_token(const std::string& body, std::string* response_body, unsigned int* http_code, const std::string& custom_url)
 {
     std::map<std::string, std::string> headers_copy;
-    std::string url;
+    std::string                        url;
     {
         std::lock_guard<std::mutex> lock(headers_mutex);
-        url = auth_base_url + ORCA_TOKEN_PATH;
+        url          = custom_url.empty() ? (auth_base_url + ORCA_TOKEN_PATH) : custom_url;
         headers_copy = extra_headers;
     }
     BOOST_LOG_TRIVIAL(trace) << "AuthManager: POST " << url;
+
+    // Verify apikey header is present
+    bool has_apikey = false;
+    for (const auto& pair : headers_copy) {
+        if (pair.first == "apikey")
+            has_apikey = true;
+    }
+    if (!has_apikey) {
+        BOOST_LOG_TRIVIAL(warning) << "AuthManager: http_post_token - apikey header MISSING! Token request will likely fail.";
+    }
 
     try {
         auto http = Http::post(url);
@@ -678,46 +690,43 @@ bool AuthManager::http_post_token(const std::string& body, std::string* response
             http.header(pair.first, pair.second);
         }
 
+        // Ensure no stale Authorization header is sent (e.g. from global headers)
+        http.remove_header("Authorization");
+
+        // Force Content-Type to application/json (remove first to avoid duplicates)
+        http.remove_header("Content-Type");
         http.header("Content-Type", "application/json");
         http.set_post_body(body);
 
-        bool success = false;
-        unsigned int status = 0;
-        std::string resp_body;
+        bool         success = false;
+        unsigned int status  = 0;
+        std::string  resp_body;
 
         http.on_complete([&](std::string body, unsigned resp_status) {
-            success = true;
-            status = resp_status;
-            resp_body = body;
-        })
-        .on_error([&](std::string body, std::string error, unsigned resp_status) {
-            success = false;
-            status = resp_status;
-            resp_body = body;
-            BOOST_LOG_TRIVIAL(error) << "AuthManager: HTTP error - " << error;
-        })
-        .timeout_max(30)
-        .perform_sync();
+                success   = true;
+                status    = resp_status;
+                resp_body = body;
+            })
+            .on_error([&](std::string body, std::string error, unsigned resp_status) {
+                success   = false;
+                status    = resp_status;
+                resp_body = body;
+                BOOST_LOG_TRIVIAL(error) << "AuthManager: HTTP error - " << error;
+            })
+            .timeout_max(30)
+            .perform_sync();
 
-        if (response_body) *response_body = resp_body;
-        if (http_code) *http_code = status;
+        if (response_body)
+            *response_body = resp_body;
+        if (http_code)
+            *http_code = status;
         return success;
 
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "AuthManager: http_post_token exception - " << e.what();
-        if (http_code) *http_code = 0;
+        if (http_code)
+            *http_code = 0;
         return false;
-    }
-}
-
-void AuthManager::ensure_secret_store()
-{
-    if (secret_store && secret_store->IsOk()) return;
-    wxSecretStore store = wxSecretStore::GetDefault();
-    if (store.IsOk()) {
-        secret_store = std::make_unique<wxSecretStore>(store);
-    } else {
-        BOOST_LOG_TRIVIAL(warning) << "AuthManager: wxSecretStore unavailable; falling back to encrypted file for refresh token";
     }
 }
 

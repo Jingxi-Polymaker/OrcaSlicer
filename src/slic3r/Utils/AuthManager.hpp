@@ -89,9 +89,8 @@ public:
     std::string build_login_info() const;
 
 private:
-    bool http_post_token(const std::string& body, std::string* response_body, unsigned int* http_code);
+    bool http_post_token(const std::string& body, std::string* response_body, unsigned int* http_code, const std::string& url = "");
     void update_redirect_uri();
-    void ensure_secret_store();
     void compute_fallback_path();
     bool decode_jwt_expiry(const std::string& token, std::chrono::system_clock::time_point& out_tp);
     bool should_refresh_locked(std::chrono::seconds skew) const;
@@ -101,7 +100,6 @@ private:
     std::map<std::string, std::string> extra_headers;
     std::mutex headers_mutex;
     PkceBundle pkce_bundle;
-    std::unique_ptr<wxSecretStore> secret_store;
     std::string refresh_fallback_path;
     SessionHandler session_handler;
     SessionInfo session;
