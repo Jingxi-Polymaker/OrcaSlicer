@@ -309,18 +309,18 @@ void SendJob::process(Ctl &ctl)
                         break;
                     }
                     ctl.update_status(curr_percent, _u8L("The Storage in the printer is abnormal. Please replace it with a normal Storage before sending to printer."));
-                    return;              
+                    return;
                 case DevStorage::SdcardState::HAS_SDCARD_READONLY:
                     ctl.update_status(curr_percent, _u8L("The Storage in the printer is read-only. Please replace it with a normal Storage before sending to printer."));
-                    return;  
+                    return;
                 case DevStorage::SdcardState::HAS_SDCARD_NORMAL:
                     ctl.update_status(curr_percent, _u8L("Sending G-code file over LAN"));
                     result = agent->start_send_gcode_to_sdcard(params, update_fn, cancel_fn, nullptr);       
                     break;
                 default:
                     ctl.update_status(curr_percent, _u8L("Encountered an unknown error with the Storage status. Please try again."));
-                    return;        
-            }            
+                    return;
+            }
     }
 
     if (ctl.was_canceled()) {

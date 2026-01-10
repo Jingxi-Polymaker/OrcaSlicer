@@ -114,7 +114,7 @@ void BindJob::process(Ctl &ctl)
                 ;
             }
         }
-        
+
         post_fail_event(result_code, result_info);
         return;
     }

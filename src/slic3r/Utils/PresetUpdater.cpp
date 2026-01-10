@@ -40,6 +40,7 @@
 #include "libslic3r/miniz_extension.hpp"
 #include "slic3r/GUI/GUI_Utils.hpp"
 #include "slic3r/Utils/NetworkAgent.hpp"
+#include "slic3r/Utils/bambu_networking.hpp"
 
 namespace fs = boost::filesystem;
 using Slic3r::GUI::Config::Index;
@@ -850,7 +851,7 @@ void PresetUpdater::priv::sync_plugins(std::string http_url, std::string plugin_
         BOOST_LOG_TRIVIAL(info) << "non need to sync plugins for there is no plugins currently.";
         return;
     }
-    std::string curr_version = NetworkAgent::use_legacy_network ? BAMBU_NETWORK_AGENT_VERSION_LEGACY : BAMBU_NETWORK_AGENT_VERSION;
+    std::string curr_version = NetworkAgent::use_legacy_network ? BAMBU_NETWORK_AGENT_VERSION_LEGACY : get_latest_network_version();
     std::string using_version = curr_version.substr(0, 9) + "00";
 
     std::string cached_version;

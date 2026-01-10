@@ -354,7 +354,8 @@ void set_log_path_and_level(const std::string& file, unsigned int level)
 			<< expr::format_date_time< boost::posix_time::ptime >("TimeStamp", "%Y-%m-%d %H:%M:%S.%f")
 			<<"[Thread " << expr::attr<attrs::current_thread_id::value_type>("ThreadID") << "]"
 			<< ":" << expr::smessage
-		)
+		),
+		keywords::auto_flush = true
 	);
 
 	logging::add_common_attributes();
@@ -1375,6 +1376,42 @@ std::string format_memsize_MB(size_t n)
         out += buf;
     }
     return out + "MB";
+}
+
+std::string format_memsize(size_t bytes, unsigned int decimals)
+{
+		static constexpr const float kb = 1024.0f;
+		static constexpr const float mb = 1024.0f * kb;
+		static constexpr const float gb = 1024.0f * mb;
+		static constexpr const float tb = 1024.0f * gb;
+
+		const float f_bytes = static_cast<float>(bytes);
+		if (f_bytes < kb)
+				return std::to_string(bytes) + " bytes";
+		else if (f_bytes < mb) {
+				const float f_kb = f_bytes / kb;
+				char buf[64];
+				sprintf(buf, "%.*f", decimals, f_kb);
+				return std::to_string(bytes) + " bytes (" + std::string(buf) + "KB)";
+		}
+		else if (f_bytes < gb) {
+				const float f_mb = f_bytes / mb;
+				char buf[64];
+				sprintf(buf, "%.*f", decimals, f_mb);
+				return std::to_string(bytes) + " bytes (" + std::string(buf) + "MB)";
+		}
+		else if (f_bytes < tb) {
+				const float f_gb = f_bytes / gb;
+				char buf[64];
+				sprintf(buf, "%.*f", decimals, f_gb);
+				return std::to_string(bytes) + " bytes (" + std::string(buf) + "GB)";
+		}
+		else {
+				const float f_tb = f_bytes / tb;
+				char buf[64];
+				sprintf(buf, "%.*f", decimals, f_tb);
+				return std::to_string(bytes) + " bytes (" + std::string(buf) + "TB)";
+		}
 }
 
 // Returns platform-specific string to be used as log output or parsed in SysInfoDialog.

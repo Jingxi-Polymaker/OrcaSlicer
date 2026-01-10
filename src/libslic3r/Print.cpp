@@ -1657,7 +1657,9 @@ StringObjectException Print::validate(StringObjectException *warning, Polygons* 
 
             // Check junction deviation
             const auto max_junction_deviation = m_config.machine_max_junction_deviation.values[0];
-            if (warning_key.empty() && m_default_object_config.default_junction_deviation.value > max_junction_deviation) {
+            // Orca: Only marlin FW supports max junction deviation. Dont display warning if firmware is not supporting it.
+            const bool support_max_junction_deviation = ( m_config.gcode_flavor == gcfMarlinFirmware);
+            if (warning_key.empty() && m_default_object_config.default_junction_deviation.value > max_junction_deviation && support_max_junction_deviation) {
                 warning->string  = L( "Junction deviation setting exceeds the printer's maximum value "
                                       "(machine_max_junction_deviation).\nOrca will "
                                       "automatically cap the junction deviation to ensure it doesn't surpass the printer's "
@@ -2252,6 +2254,8 @@ void Print::process(long long *time_cost_with_cache, bool use_cache)
         m_skirt.clear();
         m_skirt_convex_hull.clear();
         m_first_layer_convex_hull.points.clear();
+        for (PrintObject *object : m_objects)  object->m_skirt.clear();
+
         const bool draft_shield = config().draft_shield != dsDisabled;
 
         if (this->has_skirt() && draft_shield) {
@@ -3331,6 +3335,8 @@ void Print::_make_wipe_tower()
         m_wipe_tower_data.z_and_depth_pairs = wipe_tower.get_z_and_depth_pairs();
         m_wipe_tower_data.brim_width        = wipe_tower.get_brim_width();
         m_wipe_tower_data.height            = wipe_tower.get_wipe_tower_height();
+        m_wipe_tower_data.bbx               = wipe_tower.get_bbx();
+        m_wipe_tower_data.rib_offset        = wipe_tower.get_rib_offset();
 
         // Unload the current filament over the purge tower.
         coordf_t layer_height = m_objects.front()->config().layer_height.value;
@@ -4121,7 +4127,7 @@ static void convert_layer_region_from_json(const json& j, LayerRegion& layer_reg
         if (!ret) {
             BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << boost::format(":error parsing thin_fills found at layer %1%, print_z %2%") %layer_region.layer()->id() %layer_region.layer()->print_z;
             char error_buf[1024];
-            ::sprintf(error_buf, "Error while parsing thin_fills at layer %zd, print_z %f", layer_region.layer()->id(), layer_region.layer()->print_z);
+            ::sprintf(error_buf, "Error while parsing thin_fills at layer %zu, print_z %f", layer_region.layer()->id(), layer_region.layer()->print_z);
             throw Slic3r::FileIOError(error_buf);
         }
     }
@@ -4176,7 +4182,7 @@ static void convert_layer_region_from_json(const json& j, LayerRegion& layer_reg
         if (!ret) {
             BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << boost::format(": error parsing perimeters found at layer %1%, print_z %2%") %layer_region.layer()->id() %layer_region.layer()->print_z;
             char error_buf[1024];
-            ::sprintf(error_buf, "Error while parsing perimeters at layer %zd, print_z %f", layer_region.layer()->id(), layer_region.layer()->print_z);
+            ::sprintf(error_buf, "Error while parsing perimeters at layer %zu, print_z %f", layer_region.layer()->id(), layer_region.layer()->print_z);
             throw Slic3r::FileIOError(error_buf);
         }
     }
@@ -4191,7 +4197,7 @@ static void convert_layer_region_from_json(const json& j, LayerRegion& layer_reg
         if (!ret) {
             BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << boost::format(": error parsing fills found at layer %1%, print_z %2%") %layer_region.layer()->id() %layer_region.layer()->print_z;
             char error_buf[1024];
-            ::sprintf(error_buf, "Error while parsing fills at layer %zd, print_z %f", layer_region.layer()->id(), layer_region.layer()->print_z);
+            ::sprintf(error_buf, "Error while parsing fills at layer %zu, print_z %f", layer_region.layer()->id(), layer_region.layer()->print_z);
             throw Slic3r::FileIOError(error_buf);
         }
     }
@@ -4272,7 +4278,7 @@ void extract_support_layer(const json& support_layer_json, SupportLayer& support
         if (!ret) {
             BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << boost::format(": error parsing fills found at support_layer %1%, print_z %2%")%support_layer.id() %support_layer.print_z;
             char error_buf[1024];
-            ::sprintf(error_buf, "Error while parsing fills at support_layer %zd, print_z %f", support_layer.id(), support_layer.print_z);
+            ::sprintf(error_buf, "Error while parsing fills at support_layer %zu, print_z %f", support_layer.id(), support_layer.print_z);
             throw Slic3r::FileIOError(error_buf);
         }
     }
@@ -4861,7 +4867,7 @@ void WipeTowerData::construct_mesh(float width, float depth, float height, float
     wipe_tower_mesh_data = WipeTowerMeshData{};
     float first_layer_height=0.08; //brim height
     if (width < EPSILON || depth < EPSILON || height < EPSILON) return;
-    if (!is_rib_wipe_tower) {
+    if (!is_rib_wipe_tower || rib_length < EPSILON) {
         wipe_tower_mesh_data->real_wipe_tower_mesh = make_cube(width, depth, height);
         wipe_tower_mesh_data->real_brim_mesh       = make_cube(width + 2 * brim_width, depth + 2 * brim_width, first_layer_height);
         wipe_tower_mesh_data->real_brim_mesh.translate({-brim_width, -brim_width, 0});
@@ -4878,6 +4884,8 @@ void WipeTowerData::construct_mesh(float width, float depth, float height, float
         wipe_tower_mesh_data->real_brim_mesh.translate(Vec3f(rib_offset[0], rib_offset[1], 0));
         wipe_tower_mesh_data->bottom.translate(scaled(Vec2f(rib_offset[0], rib_offset[1])));
     }
+    //wipe_tower_mesh_data->real_wipe_tower_mesh.write_ascii("../wipe_tower_mesh.obj");
+   //wipe_tower_mesh_data->real_brim_mesh.write_ascii("../wipe_tower_brim_mesh.obj");
 }
 
 } // namespace Slic3r
