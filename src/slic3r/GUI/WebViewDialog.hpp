@@ -28,7 +28,7 @@
 
 namespace Slic3r {
 
-class INetworkAgent;
+class NetworkAgent;
 
 namespace GUI {
 
@@ -96,7 +96,7 @@ public:
     void SendRecentList(int images);
     void SetLoginPanelVisibility(bool bshow);
     void SendDesignStaffpick(bool on);
-    void OpenModelDetail(std::string id, INetworkAgent* agent);
+    void OpenModelDetail(std::string id, NetworkAgent *agent);
     void SendLoginInfo();
     void ShowNetpluginTip();
 

@@ -44,7 +44,7 @@ ZUserLogin::ZUserLogin() : wxDialog((wxWindow *) (wxGetApp().mainframe), wxID_AN
 {
     SetBackgroundColour(*wxWHITE);
     // Url
-    INetworkAgent* agent = wxGetApp().getAgent();
+    NetworkAgent* agent = wxGetApp().getAgent();
     if (!agent) {
 
         SetBackgroundColour(*wxWHITE);
@@ -75,21 +75,11 @@ ZUserLogin::ZUserLogin() : wxDialog((wxWindow *) (wxGetApp().mainframe), wxID_AN
         CentreOnParent();
     }
     else {
-        std::string host_url = agent->get_bambulab_host();
-        m_networkOk = false;
-
-        if (agent->get_version() == "orca_network") {
-            boost::filesystem::path login_path = boost::filesystem::path(resources_dir()) / "web" / "login" / "orca_login.html";
-            TargetUrl = wxString::FromUTF8("file://") + from_u8(login_path.make_preferred().string());
-        } else {
-            TargetUrl = host_url + "/sign-in";
-
-            wxString strlang = wxGetApp().current_language_code_safe();
-            if (strlang != "") {
-                strlang.Replace("_", "-");
-                TargetUrl = host_url + "/" + strlang + "/sign-in";
-            }
-        }
+        // Get the login URL from the cloud service agent
+        wxString strlang = wxGetApp().current_language_code_safe();
+        strlang.Replace("_", "-");
+        TargetUrl = wxString::FromUTF8(agent->get_cloud_login_url(strlang.ToStdString()));
+        m_networkOk = TargetUrl.StartsWith("file://");
 
         BOOST_LOG_TRIVIAL(info) << "login url = " << TargetUrl.ToStdString();
 
@@ -230,10 +220,10 @@ void ZUserLogin::OnDocumentLoaded(wxWebViewEvent &evt)
 {
     // Only notify if the document is the main frame, not a subframe
     wxString tmpUrl = evt.GetURL();
-    INetworkAgent* agent = wxGetApp().getAgent();
-    std::string strHost = agent->get_bambulab_host();
+    NetworkAgent* agent = wxGetApp().getAgent();
+    std::string strHost = agent->get_cloud_service_host();
 
-    if ( tmpUrl.Contains(strHost) ) {
+    if (tmpUrl.StartsWith("file://") || tmpUrl.Contains(strHost)) {
         m_networkOk = true;
         // wxLogMessage("%s", "Document loaded; url='" + evt.GetURL() + "'");
     }
@@ -285,11 +275,45 @@ void ZUserLogin::OnScriptMessage(wxWebViewEvent &evt)
         BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Command: " << strCmd.ToStdString();
 
         if (strCmd == "get_login_cmd") {
-             INetworkAgent* agent = wxGetApp().getAgent();
+             NetworkAgent* agent = wxGetApp().getAgent();
              if (agent) {
                  // Return login config (backend_url, apikey, pkce)
                  // WebView handles provider selection internally
                  std::string login_cmd = agent->build_login_cmd();
+                 m_loopback_port = 0;
+                 try {
+                     json cfg = json::parse(login_cmd);
+                     if (cfg.contains("pkce")) {
+                         const auto& pkce = cfg["pkce"];
+                         if (pkce.contains("loopback_port")) {
+                             if (pkce["loopback_port"].is_number_integer()) {
+                                 m_loopback_port = pkce["loopback_port"].get<int>();
+                             } else if (pkce["loopback_port"].is_string()) {
+                                 m_loopback_port = std::stoi(pkce["loopback_port"].get<std::string>());
+                             }
+                         }
+
+                         if (m_loopback_port <= 0 && pkce.contains("redirect_uri") && pkce["redirect_uri"].is_string()) {
+                             const std::string redirect_uri = pkce["redirect_uri"].get<std::string>();
+                             const char* prefixes[] = {"localhost:", "127.0.0.1:"};
+                             for (const char* prefix : prefixes) {
+                                 auto start = redirect_uri.find(prefix);
+                                 if (start == std::string::npos) continue;
+                                 start += strlen(prefix);
+                                 auto end = redirect_uri.find('/', start);
+                                 std::string port_str = redirect_uri.substr(start, end - start);
+                                 try {
+                                     m_loopback_port = std::stoi(port_str);
+                                 } catch (...) {
+                                     m_loopback_port = 0;
+                                 }
+                                 break;
+                             }
+                         }
+                     }
+                 } catch (...) {
+                     m_loopback_port = 0;
+                 }
                  wxString str_js = wxString::FromUTF8("window.postMessage(") + wxString::FromUTF8(login_cmd.c_str()) + wxString::FromUTF8(", '*')");
                  this->RunScript(str_js);
              }
@@ -323,12 +347,14 @@ void ZUserLogin::OnScriptMessage(wxWebViewEvent &evt)
         }
         else if (strCmd == "get_localhost_url") {
             BOOST_LOG_TRIVIAL(info) << "thirdparty_login: get_localhost_url";
-            wxGetApp().start_http_server();
+            int loopback_port = m_loopback_port > 0 ? m_loopback_port : LOCALHOST_PORT;
+            wxGetApp().start_http_server(loopback_port);
             std::string sequence_id = j["sequence_id"].get<std::string>();
             CallAfter([this, sequence_id] {
                 json ack_j;
                 ack_j["command"] = "get_localhost_url";
-                ack_j["response"]["base_url"] = std::string(LOCALHOST_URL) + std::to_string(LOCALHOST_PORT);
+                int loopback_port = m_loopback_port > 0 ? m_loopback_port : LOCALHOST_PORT;
+                ack_j["response"]["base_url"] = std::string(LOCALHOST_URL) + std::to_string(loopback_port);
                 ack_j["response"]["result"] = "success";
                 ack_j["sequence_id"] = sequence_id;
                 wxString str_js = wxString::Format("window.postMessage(%s)", ack_j.dump());
@@ -339,6 +365,8 @@ void ZUserLogin::OnScriptMessage(wxWebViewEvent &evt)
             BOOST_LOG_TRIVIAL(info) << "thirdparty_login: thirdparty_login";
             if (j["data"].contains("url")) {
                 std::string jump_url = j["data"]["url"].get<std::string>();
+                int loopback_port = m_loopback_port > 0 ? m_loopback_port : LOCALHOST_PORT;
+                wxGetApp().start_http_server(loopback_port);
                 CallAfter([this, jump_url] {
                     wxString url = wxString::FromUTF8(jump_url);
                     wxLaunchDefaultBrowser(url);

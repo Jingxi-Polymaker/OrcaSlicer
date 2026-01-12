@@ -198,7 +198,7 @@ void MonitorPanel::init_tabpanel()
     m_hms_panel = new HMSPanel(m_tabpanel);
     m_tabpanel->AddPage(m_hms_panel, _L("Assistant(HMS)"),    "", false);
 
-    std::string network_ver = Slic3r::NetworkAgent::get_library_version();
+    std::string network_ver = Slic3r::NetworkAgent::get_version();
     if (!network_ver.empty()) {
         m_tabpanel->SetFooterText(wxString::Format("Network plugin v%s", network_ver));
     }
@@ -334,7 +334,7 @@ void MonitorPanel::update_all()
     if (!m_initialized)
         return;
 
-    INetworkAgent* m_agent = wxGetApp().getAgent();
+    NetworkAgent* m_agent = wxGetApp().getAgent();
     Slic3r::DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
     if (!dev) return;
     obj = dev->get_selected_machine();
@@ -411,7 +411,7 @@ bool MonitorPanel::Show(bool show)
     wxGetApp().mainframe->SetMinSize(wxGetApp().plater()->GetMinSize());
 #endif
 
-    INetworkAgent* m_agent = wxGetApp().getAgent();
+    NetworkAgent* m_agent = wxGetApp().getAgent();
     DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
     if (show) {
         start_update();
@@ -443,7 +443,7 @@ void MonitorPanel::show_status(int status)
     if (!m_initialized) return;
     if (last_status == status)return;
     if ((last_status & (int)MonitorStatus::MONITOR_CONNECTING) != 0) {
-        INetworkAgent* agent = wxGetApp().getAgent();
+        NetworkAgent* agent = wxGetApp().getAgent();
         json j;
         j["dev_id"] = obj ? obj->get_dev_id() : "obj_nullptr";
         if ((status & (int)MonitorStatus::MONITOR_DISCONNECTED) != 0) {
@@ -528,7 +528,7 @@ void MonitorPanel::jump_to_LiveView()
 
 void MonitorPanel::update_network_version_footer()
 {
-    std::string binary_version = Slic3r::NetworkAgent::get_library_version();
+    std::string binary_version = Slic3r::NetworkAgent::get_version();
     if (binary_version.empty())
         return;
 

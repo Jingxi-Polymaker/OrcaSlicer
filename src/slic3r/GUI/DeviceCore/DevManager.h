@@ -11,7 +11,7 @@ namespace Slic3r
 //Previous definitions
 struct BBLocalMachine;
 class MachineObject;
-class INetworkAgent;
+class NetworkAgent;
 
 namespace GUI {
 class GUI_App;
@@ -23,7 +23,7 @@ class DeviceManager
     friend class GUI::GUI_App;
     friend class DeviceManagerRefresher;
 private:
-    INetworkAgent* m_agent{ nullptr };
+    NetworkAgent* m_agent{ nullptr };
     DeviceManagerRefresher* m_refresher{ nullptr };
 
     bool m_enable_mutil_machine = false;
@@ -35,12 +35,12 @@ private:
     std::map<std::string, MachineObject*> userMachineList;      /* dev_id -> MachineObject*  cloudMachine of User */
 
 public:
-    DeviceManager(INetworkAgent* agent = nullptr);
+    DeviceManager(NetworkAgent* agent = nullptr);
     ~DeviceManager();
 
 public:
-    INetworkAgent* get_agent() const { return m_agent; }
-    void set_agent(INetworkAgent* agent);
+    NetworkAgent* get_agent() const { return m_agent; }
+    void set_agent(NetworkAgent* agent);
 
     void start_refresher();
     void stop_refresher();

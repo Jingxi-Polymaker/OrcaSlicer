@@ -1012,10 +1012,10 @@ void SendToPrinterDialog::clear_ip_address_config(wxCommandEvent& e)
 
 void SendToPrinterDialog::update_user_machine_list()
 {
-    INetworkAgent* m_agent = wxGetApp().getAgent();
+    NetworkAgent* m_agent = wxGetApp().getAgent();
     if (m_agent && m_agent->is_user_login()) {
         boost::thread get_print_info_thread = Slic3r::create_thread([this, token = std::weak_ptr<int>(m_token)] {
-            INetworkAgent* agent = wxGetApp().getAgent();
+            NetworkAgent* agent = wxGetApp().getAgent();
             unsigned int http_code;
             std::string body;
             int result = agent->get_user_print_info(&http_code, &body);
@@ -1220,7 +1220,7 @@ void SendToPrinterDialog::on_selection_changed(wxCommandEvent &event)
 
 void SendToPrinterDialog::update_show_status()
 {
-    INetworkAgent* agent = Slic3r::GUI::wxGetApp().getAgent();
+    NetworkAgent* agent = Slic3r::GUI::wxGetApp().getAgent();
     DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
     if (!agent) return;
     if (!dev) return;
@@ -1562,7 +1562,7 @@ void SendToPrinterDialog::set_default()
     // rset status bar
     m_status_bar->reset();
 
-    INetworkAgent* agent = wxGetApp().getAgent();
+    NetworkAgent* agent = wxGetApp().getAgent();
     if (agent) {
         if (agent->is_user_login()) {
             show_status(PrintDialogStatus::PrintStatusInit);
@@ -1682,7 +1682,7 @@ void SendToPrinterDialog::GetConnection()
     }
 
     m_waiting_support           = false;
-    INetworkAgent* agent         = wxGetApp().getAgent();
+    NetworkAgent *agent         = wxGetApp().getAgent();
     std::string   agent_version = agent ? agent->get_version() : "";
     std::string   dev_ver       = obj->get_ota_version();
     std::string   dev_id        = obj->get_dev_id();

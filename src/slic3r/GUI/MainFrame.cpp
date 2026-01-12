@@ -981,7 +981,7 @@ void MainFrame::shutdown()
     }
 
     // stop agent
-    INetworkAgent* agent = wxGetApp().getAgent();
+    NetworkAgent* agent = wxGetApp().getAgent();
     if (agent)
         agent->track_enable(false);
 
@@ -2364,7 +2364,7 @@ static void add_common_publish_menu_items(wxMenu* publish_menu, MainFrame* mainF
             }
 
             json j;
-            INetworkAgent* agent = GUI::wxGetApp().getAgent();
+            NetworkAgent* agent = GUI::wxGetApp().getAgent();
 
             //if (GUI::wxGetApp().plater()->model().objects.empty()) return;
             wxGetApp().open_publish_page_dialog();
@@ -3454,7 +3454,7 @@ void MainFrame::load_config_file()
         wxGetApp().app_config->update_config_dir(get_dir_name(cfiles.back()));
         wxGetApp().load_current_presets();
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " presets has been import,and size is" << cfiles.size();
-        INetworkAgent* agent = wxGetApp().getAgent();
+        NetworkAgent* agent = wxGetApp().getAgent();
         if (agent) {
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " user is: " << agent->get_user_id();
         }
@@ -4015,7 +4015,7 @@ void MainFrame::on_select_default_preset(SimpleEvent& evt)
                     wxICON_INFORMATION);
 
     /* get setting list */
-    INetworkAgent* agent = wxGetApp().getAgent();
+    NetworkAgent* agent = wxGetApp().getAgent();
     switch ( dialog.ShowModal() )
     {
         case wxID_YES: {

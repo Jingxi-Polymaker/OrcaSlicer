@@ -283,7 +283,7 @@ void MediaPlayCtrl::Play()
     }
 
     BOOST_LOG_TRIVIAL(info) << "MediaPlayCtrl::Play: " << m_lan_proto << m_remote_proto << m_disable_lan;
-    INetworkAgent* agent = wxGetApp().getAgent();
+    NetworkAgent *agent = wxGetApp().getAgent();
     std::string  agent_version = agent ? agent->get_version() : "";
     if (m_lan_proto > MachineObject::LVL_Disable && (m_lan_mode || !m_remote_proto) && !m_disable_lan && !m_lan_ip.empty()) {
         m_disable_lan = m_remote_proto && !m_lan_mode; // try remote next time
@@ -549,7 +549,7 @@ void MediaPlayCtrl::ToggleStream()
         m_streaming = true;
         return;
     }
-    INetworkAgent* agent = wxGetApp().getAgent();
+    NetworkAgent *agent = wxGetApp().getAgent();
     if (!agent) return;
     std::string protocols[] = {"", "\"tutk\"", "\"agora\"", "\"tutk\",\"agora\""};
     agent->get_camera_url(m_machine + "|" + m_dev_ver + "|" + protocols[m_remote_proto],

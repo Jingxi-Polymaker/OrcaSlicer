@@ -10,24 +10,25 @@
 #include <boost/thread.hpp>
 #include "nlohmann/json.hpp"
 #include "slic3r/Utils/json_diff.hpp"
+#include "slic3r/Utils/NetworkAgent.hpp"
 
 
 using namespace nlohmann;
 
 namespace Slic3r {
 
-class INetworkAgent;
+class NetworkAgent;
 
 class UserManager
 {
 private:
-    INetworkAgent* m_agent { nullptr };
+    NetworkAgent* m_agent { nullptr };
 
 public:
-    UserManager(INetworkAgent* agent = nullptr);
+    UserManager(NetworkAgent* agent = nullptr);
     ~UserManager();
 
-    void set_agent(INetworkAgent* agent);
+    void set_agent(NetworkAgent* agent);
     int parse_json(std::string payload);
 };
 } // namespace Slic3r

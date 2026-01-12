@@ -14,7 +14,7 @@ using namespace nlohmann;
 
 namespace Slic3r
 {
-    DeviceManager::DeviceManager(INetworkAgent* agent)
+    DeviceManager::DeviceManager(NetworkAgent* agent)
     {
         m_agent = agent;
         m_refresher = new DeviceManagerRefresher(this);
@@ -90,7 +90,7 @@ namespace Slic3r
         userMachineList.clear();
     }
 
-    void DeviceManager::set_agent(INetworkAgent* agent)
+    void DeviceManager::set_agent(NetworkAgent* agent)
     {
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": updating agent for "
                                 << localMachineList.size() << " local and "
@@ -885,7 +885,7 @@ namespace Slic3r
     {
         if (!m_manager) { return; }
 
-        INetworkAgent* agent = m_manager->get_agent();
+        NetworkAgent* agent = m_manager->get_agent();
         if (!agent) { return; }
 
         // reset to active

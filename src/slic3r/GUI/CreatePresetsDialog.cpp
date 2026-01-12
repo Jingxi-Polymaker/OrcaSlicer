@@ -3912,7 +3912,7 @@ ExportConfigsDialog::ExportCase ExportConfigsDialog::archive_preset_bundle_to_fi
             std::string printer_preset_name_ = printer_preset->name;
 
             json          bundle_structure;
-            INetworkAgent *agent = wxGetApp().getAgent();
+            NetworkAgent *agent = wxGetApp().getAgent();
             std::string   clock = get_curr_timestmp();
             if (agent) {
                 bundle_structure["version"]   = agent->get_version();
@@ -4031,7 +4031,7 @@ ExportConfigsDialog::ExportCase ExportConfigsDialog::archive_filament_bundle_to_
             std::string filament_name = checkbox_filament_name.second;
 
             json          bundle_structure;
-            INetworkAgent *agent = wxGetApp().getAgent();
+            NetworkAgent *agent = wxGetApp().getAgent();
             std::string   clock = get_curr_timestmp();
             if (agent) {
                 bundle_structure["version"]   = agent->get_version();

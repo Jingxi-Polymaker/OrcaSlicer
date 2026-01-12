@@ -247,7 +247,7 @@ void SelectMObjectPopup::Popup(wxWindow* WXUNUSED(focus))
     if (wxGetApp().is_user_login()) {
         if (!get_print_info_thread) {
             get_print_info_thread = new boost::thread(Slic3r::create_thread([this, token = std::weak_ptr<int>(m_token)] {
-                INetworkAgent* agent = wxGetApp().getAgent();
+                NetworkAgent* agent = wxGetApp().getAgent();
                 unsigned int http_code;
                 std::string body;
                 int result = agent->get_user_print_info(&http_code, &body);
@@ -534,7 +534,7 @@ void CalibrationPanel::update_print_error_info(int code, std::string msg, std::s
 
 void CalibrationPanel::update_all() {
 
-    INetworkAgent* m_agent = wxGetApp().getAgent();
+    NetworkAgent* m_agent = wxGetApp().getAgent();
     Slic3r::DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
     if (!dev) return;
     obj = dev->get_selected_machine();

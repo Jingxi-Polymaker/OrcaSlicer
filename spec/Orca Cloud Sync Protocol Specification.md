@@ -180,7 +180,7 @@ The client application must maintain two distinct types of timestamp state:
     {
       "next_cursor": "2025-11-28T14:35:00.123456Z",
       "upserts": [
-        { "id": "p1", "content": {...}, "updated_at": "..." }
+        { "id": "p1", "content": {...}, "updated_time": "..." }
       ],
       "deletes": ["p2", "p3"]
     }
@@ -229,7 +229,7 @@ The client application must maintain two distinct types of timestamp state:
     - **200 OK:** Operation successful. Returns profile metadata (id, user_id, name, timestamps) but **excludes content** to save bandwidth. Client updates local state.
         
     - **409 Conflict:** Operation failed.
-        - **Stale/Collision:** Returns server's current version metadata (`{ "id": ..., "user_id": ..., "name": ..., "updated_at": ..., "created_at": ... }`) **excluding content**. Client must fetch the full profile via `pull` if merging is required, or simply retry the push with the new timestamp to overwrite.
+        - **Stale/Collision:** Returns server's current version metadata (`{ "id": ..., "user_id": ..., "name": ..., "updated_time": ..., "created_time": ... }`) **excluding content**. Client must fetch the full profile via `pull` if merging is required, or simply retry the push with the new timestamp to overwrite.
         - **Deleted:** Returns `null`. Client must decide to re-create (push without token) or accept deletion.
         
 

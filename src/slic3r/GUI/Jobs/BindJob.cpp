@@ -51,16 +51,16 @@ void BindJob::process(Ctl &ctl)
     auto msg = waiting_auth_str;
     int curr_percent = 0;
 
-    INetworkAgent* agent = wxGetApp().getAgent();
-    if (!agent) { return; }
+    NetworkAgent* m_agent = wxGetApp().getAgent();
+    if (!m_agent) { return; }
 
     // get timezone
     wxDateTime::TimeZone tz(wxDateTime::Local);
     long offset = tz.GetOffset();
     std::string timezone = get_timezone_utc_hm(offset);
-    
-    agent->track_update_property("ssdp_version", m_ssdp_version, "string");
-    int result = agent->bind(m_dev_ip, m_dev_id, m_sec_link, timezone, m_improved,
+
+    m_agent->track_update_property("ssdp_version", m_ssdp_version, "string");
+    int result = m_agent->bind(m_dev_ip, m_dev_id, m_sec_link, timezone, m_improved,
         [this, &ctl, &curr_percent, &msg, &result_code, &result_info](int stage, int code, std::string info) {
 
             result_code = code;

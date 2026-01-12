@@ -1497,7 +1497,7 @@ int PresetCollection::get_differed_values_to_update(Preset& preset, std::map<std
     }
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " uploading user preset name is: " << preset.name << "and create filament_id is: " << preset.filament_id
                             << " and base_id is: " << preset.base_id;
-    key_values[BBL_JSON_KEY_UPDATE_TIME] = preset.updated_time;
+    key_values[ORCA_JSON_KEY_UPDATE_TIME] = preset.updated_time;
     key_values[BBL_JSON_KEY_TYPE] = Preset::get_iot_type_string(preset.type);
     return 0;
 }
@@ -1798,8 +1798,8 @@ bool PresetCollection::load_user_preset(std::string name, std::map<std::string, 
 
     //update_time (stored as string, converted to millis for comparison)
     std::string cloud_update_time;
-    if (preset_values.find(BBL_JSON_KEY_UPDATE_TIME) != preset_values.end()) {
-        cloud_update_time = preset_values[BBL_JSON_KEY_UPDATE_TIME];
+    if (preset_values.find(ORCA_JSON_KEY_UPDATE_TIME) != preset_values.end()) {
+        cloud_update_time = preset_values[ORCA_JSON_KEY_UPDATE_TIME];
     }
 
     //user_id

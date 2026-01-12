@@ -392,7 +392,7 @@ wxBoxSizer *PreferencesDialog::create_item_region_combobox(wxString title, wxStr
         else
             area = "Others";*/
         combobox->SetSelection(region_index);
-        INetworkAgent* agent = wxGetApp().getAgent();
+        NetworkAgent* agent = wxGetApp().getAgent();
         AppConfig* config = GUI::wxGetApp().app_config;
         if (agent) {
             MessageDialog msg_wingow(this, _L("Changing the region will log out your account.\n") + "\n" + _L("Do you want to continue?"), _L("Region selection"),
@@ -1767,7 +1767,7 @@ wxBoxSizer* PreferencesDialog::create_debug_page()
 
             //if (iot_environment_map[param] != m_iot_environment_def) {
             if (true) {
-                INetworkAgent* agent = wxGetApp().getAgent();
+                NetworkAgent* agent = wxGetApp().getAgent();
                 if      (param == 0) { // "dev_host"
                     app_config->set("iot_environment", ENV_DEV_HOST);
                 }

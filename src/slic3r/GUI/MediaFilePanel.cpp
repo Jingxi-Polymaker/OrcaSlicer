@@ -345,7 +345,7 @@ void MediaFilePanel::UpdateByObj(MachineObject* obj)
                     MessageDialog(this, m, _L("Download failed"), wxOK | wxICON_ERROR).ShowModal();
                 });
 
-            INetworkAgent* agent = wxGetApp().getAgent();
+            NetworkAgent* agent = wxGetApp().getAgent();
             if (result > 1 || result == 0) {
                 json j;
                 j["code"] = result;
@@ -464,7 +464,7 @@ void MediaFilePanel::fetchUrl(boost::weak_ptr<PrinterFileSystem> wfs)
     }
     BOOST_LOG_TRIVIAL(info) << "MediaFilePanel::fetchUrl: " << m_local_proto << m_remote_proto;
     m_waiting_support = false;
-    INetworkAgent* agent = wxGetApp().getAgent();
+    NetworkAgent *agent = wxGetApp().getAgent();
     std::string  agent_version = agent ? agent->get_version() : "";
     if ((m_lan_mode || !m_remote_proto) && m_local_proto && !m_lan_ip.empty()) {
         std::string url = "bambu:///local/" + m_lan_ip + ".?port=6000&user=" + m_lan_user + "&passwd=" + m_lan_passwd;

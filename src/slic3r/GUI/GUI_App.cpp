@@ -991,7 +991,7 @@ void GUI_App::post_init()
 
             std::string http_url = get_http_url(app_config->get_country_code());
             std::string language = GUI::into_u8(current_language_code());
-            std::string network_ver = Slic3r::NetworkAgent::get_library_version();
+            std::string network_ver = Slic3r::NetworkAgent::get_version();
             bool        sys_preset  = app_config->get("sync_system_preset") == "true";
             this->preset_updater->sync(http_url, language, network_ver, sys_preset ? preset_bundle : nullptr);
 
@@ -1791,7 +1791,7 @@ bool GUI_App::hot_reload_network_plugin()
     restart_networking();
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": restart_networking returned";
 
-    std::string loaded_version = Slic3r::NetworkAgent::get_library_version();
+    std::string loaded_version = Slic3r::NetworkAgent::get_version();
     bool success = m_agent != nullptr && !loaded_version.empty() && loaded_version != "00.00.00.00";
     bool user_logged_in = m_agent && m_agent->is_user_login();
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": after restart_networking, is_user_login = " << user_logged_in
@@ -1822,7 +1822,7 @@ std::string GUI_App::get_latest_network_version() const
 
 bool GUI_App::has_network_update_available() const
 {
-    std::string current = Slic3r::NetworkAgent::get_library_version();
+    std::string current = Slic3r::NetworkAgent::get_version();
     std::string latest = get_latest_network_version();
 
     if (current.empty() || current == "00.00.00.00")
@@ -1844,7 +1844,7 @@ void GUI_App::show_network_plugin_download_dialog(bool is_update)
         mode = NetworkPluginDownloadDialog::Mode::MissingPlugin;
     }
 
-    std::string current_version = Slic3r::NetworkAgent::get_library_version();
+    std::string current_version = Slic3r::NetworkAgent::get_version();
 
     NetworkPluginDownloadDialog dlg(mainframe, mode, current_version,
         load_error.message, load_error.technical_details);
@@ -1912,7 +1912,7 @@ int GUI_App::updating_bambu_networking()
 
 bool GUI_App::check_networking_version()
 {
-    std::string network_ver = Slic3r::NetworkAgent::get_library_version();
+    std::string network_ver = Slic3r::NetworkAgent::get_version();
     if (!network_ver.empty()) {
         BOOST_LOG_TRIVIAL(info) << "get_network_agent_version=" << network_ver;
     }
@@ -3325,7 +3325,7 @@ __retry:
     if (!load_agent_dll) {
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": on_init_network, load dll ok";
 
-        std::string loaded_version = Slic3r::NetworkAgent::get_library_version();
+        std::string loaded_version = Slic3r::NetworkAgent::get_version();
         if (app_config && !loaded_version.empty() && loaded_version != "00.00.00.00") {
             std::string config_version = app_config->get_network_plugin_version();
             std::string config_base = extract_base_version(config_version);
@@ -3376,7 +3376,7 @@ __retry:
         std::string data_directory = data_dir();
 
         // m_agent = new Slic3r::NetworkAgent(data_directory);
-        std::unique_ptr<Slic3r::INetworkAgent> agent_ptr = Slic3r::create_agent_from_config(data_directory, app_config);
+        std::unique_ptr<Slic3r::NetworkAgent> agent_ptr = Slic3r::create_agent_from_config(data_directory, app_config);
         m_agent = agent_ptr.release();
 
         if (!m_device_manager)
@@ -5645,7 +5645,7 @@ void GUI_App::sync_preset(Preset* preset)
             if (!new_setting_id.empty()) {
                 setting_id = new_setting_id;
                 result = 0;
-                update_time = values_map[BBL_JSON_KEY_UPDATE_TIME];
+                update_time = values_map[ORCA_JSON_KEY_UPDATE_TIME];
             }
             else {
                 BOOST_LOG_TRIVIAL(trace) << "[sync_preset]init: request_setting_id failed, http code "<<http_code;
@@ -5672,7 +5672,7 @@ void GUI_App::sync_preset(Preset* preset)
             if (!new_setting_id.empty()) {
                 setting_id = new_setting_id;
                 result = 0;
-                update_time = values_map[BBL_JSON_KEY_UPDATE_TIME];
+                update_time = values_map[ORCA_JSON_KEY_UPDATE_TIME];
             } else {
                 BOOST_LOG_TRIVIAL(trace) << "[sync_preset]create: request_setting_id failed, http code "<<http_code;
                 // do not post new preset this time if http code >= 400
@@ -5696,14 +5696,14 @@ void GUI_App::sync_preset(Preset* preset)
                     result = 0;
                 }
                 else {
-                    result = m_agent->put_setting(setting_id, preset->name, &values_map, &http_code);
-                    if (http_code >= 400) {
-                        result = 0;
-                        updated_info = "hold";
-                        BOOST_LOG_TRIVIAL(error) << "[sync_preset] put setting_id = " << setting_id << " failed, http_code = " << http_code;
-                    } else {
-                        update_time = values_map[BBL_JSON_KEY_UPDATE_TIME];
-                    }
+                result = m_agent->put_setting(setting_id, preset->name, &values_map, &http_code);
+                if (http_code >= 400) {
+                    result = 0;
+                    updated_info = "hold";
+                    BOOST_LOG_TRIVIAL(error) << "[sync_preset] put setting_id = " << setting_id << " failed, http_code = " << http_code;
+                } else {
+                    update_time = values_map[ORCA_JSON_KEY_UPDATE_TIME];
+                }
                 }
 
             }
@@ -5805,7 +5805,7 @@ void GUI_App::start_sync_user_preset(bool with_progress_dlg)
                 auto type = info[BBL_JSON_KEY_TYPE];
                 auto name = info[BBL_JSON_KEY_NAME];
                 auto setting_id = info[BBL_JSON_KEY_SETTING_ID];
-                std::string update_time = info[BBL_JSON_KEY_UPDATE_TIME];
+                std::string update_time = info[ORCA_JSON_KEY_UPDATE_TIME];
                 if (type == "filament") {
                     return preset_bundle->filaments.need_sync(name, setting_id, update_time);
                 } else if (type == "print") {
@@ -5912,6 +5912,25 @@ void GUI_App::start_http_server()
     if (!m_http_server.is_started())
         m_http_server.start();
 }
+
+void GUI_App::start_http_server(int port)
+{
+    if (port <= 0) {
+        start_http_server();
+        return;
+    }
+
+    if (m_http_server.is_started()) {
+        if (m_http_server.get_port() == static_cast<boost::asio::ip::port_type>(port)) {
+            return;
+        }
+        m_http_server.stop();
+    }
+
+    m_http_server.set_port(static_cast<boost::asio::ip::port_type>(port));
+    m_http_server.start();
+}
+
 void GUI_App::stop_http_server()
 {
     m_http_server.stop();

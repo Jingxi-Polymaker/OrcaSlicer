@@ -103,7 +103,7 @@ void SendJob::process(Ctl &ctl)
     PrintParams params;
     std::string msg;
     int curr_percent = 10;
-    INetworkAgent* agent = wxGetApp().getAgent();
+    NetworkAgent* agent = wxGetApp().getAgent();
     AppConfig* config = wxGetApp().app_config;
     int result = -1;
     std::string http_body;
