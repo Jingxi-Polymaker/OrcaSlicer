@@ -346,6 +346,11 @@ void OrcaCloudServiceAgent::configure_urls(AppConfig* app_config)
 {
     if (!app_config) return;
 
+    // Read token storage preference
+    m_use_encrypted_token_file = app_config->get_bool(SETTING_USE_ENCRYPTED_TOKEN_FILE);
+    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: token storage mode set to "
+                             << (m_use_encrypted_token_file ? "encrypted file" : "System Keychain");
+
     std::string api_url = app_config->get(CONFIG_ORCA_API_URL);
     if (!api_url.empty()) {
         api_base_url = api_url;
@@ -372,6 +377,18 @@ void OrcaCloudServiceAgent::set_api_base_url(const std::string& url)
 void OrcaCloudServiceAgent::set_auth_base_url(const std::string& url)
 {
     auth_base_url = url;
+}
+
+void OrcaCloudServiceAgent::set_use_encrypted_token_file(bool use)
+{
+    m_use_encrypted_token_file = use;
+    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: token storage mode set to "
+                             << (m_use_encrypted_token_file ? "encrypted file" : "System Keychain");
+}
+
+bool OrcaCloudServiceAgent::get_use_encrypted_token_file() const
+{
+    return m_use_encrypted_token_file;
 }
 
 // ============================================================================
@@ -1437,26 +1454,18 @@ void OrcaCloudServiceAgent::persist_refresh_token(const std::string& token)
     }
 
     bool stored = false;
-    wxSecretStore store = wxSecretStore::GetDefault();
-    if (store.IsOk()) {
-        wxSecretValue secret(wxString::FromUTF8(token.c_str()));
-        if (store.Save(SECRET_STORE_SERVICE, SECRET_STORE_USER, secret)) {
-            stored = true;
-        } else {
-            BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: wxSecretStore save failed, will attempt encrypted-file fallback";
-        }
-    }
 
-    if (!stored) {
+    if (m_use_encrypted_token_file) {
+        // Use encrypted file only
         auto key = sha256_bytes(machine_identifier());
         if (key.empty()) {
-            BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: cannot derive key for refresh-token fallback storage";
+            BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: cannot derive key for refresh-token file storage";
             return;
         }
 
         std::string payload;
         if (!aes256gcm_encrypt(token, key, payload)) {
-            BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: failed to encrypt refresh token for fallback storage";
+            BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: failed to encrypt refresh token for file storage";
             return;
         }
 
@@ -1483,15 +1492,28 @@ void OrcaCloudServiceAgent::persist_refresh_token(const std::string& token)
                 stored = true;
             } else {
                 wxRemoveFile(wxString::FromUTF8(tmp_path.c_str()));
-                BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: failed to atomically replace refresh-token fallback file";
+                BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: failed to atomically replace refresh-token file";
             }
         } else {
-            BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: cannot open fallback refresh-token path for write - " << refresh_fallback_path;
+            BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: cannot open refresh-token file for write - " << refresh_fallback_path;
+        }
+    } else {
+        // Use wxSecretStore only
+        wxSecretStore store = wxSecretStore::GetDefault();
+        if (store.IsOk()) {
+            wxSecretValue secret(wxString::FromUTF8(token.c_str()));
+            if (store.Save(SECRET_STORE_SERVICE, SECRET_STORE_USER, secret)) {
+                stored = true;
+            } else {
+                BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: System Keychain save failed";
+            }
+        } else {
+            BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: System Keychain not available";
         }
     }
 
     if (stored) {
-        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: refresh token persisted securely";
+        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: refresh token persisted successfully";
     }
 }
 
@@ -1499,63 +1521,69 @@ bool OrcaCloudServiceAgent::load_refresh_token(std::string& out_token)
 {
     out_token.clear();
     BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: load_refresh_token called";
-    wxSecretStore store = wxSecretStore::GetDefault();
-    if (store.IsOk()) {
-        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: wxSecretStore is available, attempting load";
-        wxString username;
-        wxSecretValue secret;
-        if (store.Load(SECRET_STORE_SERVICE, username, secret) && secret.IsOk()) {
-            out_token.assign(static_cast<const char*>(secret.GetData()), secret.GetSize());
-            if (!out_token.empty()) {
-                BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: loaded refresh token from wxSecretStore";
-                return true;
-            }
-        } else {
-            BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: wxSecretStore Load returned false or secret not ok";
-        }
-    } else {
-        BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: wxSecretStore is NOT available (IsOk=false)";
-    }
 
-    compute_fallback_path();
-    if (wxFileExists(wxString::FromUTF8(refresh_fallback_path.c_str()))) {
-        std::ifstream ifs(refresh_fallback_path, std::ios::binary);
-        std::string payload((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-        auto key = sha256_bytes(machine_identifier());
-        std::string plain;
-        if (!key.empty()) {
-            std::string encoded_payload = payload;
-            bool integrity_ok = true;
+    if (m_use_encrypted_token_file) {
+        // Load from encrypted file only
+        compute_fallback_path();
+        if (wxFileExists(wxString::FromUTF8(refresh_fallback_path.c_str()))) {
+            std::ifstream ifs(refresh_fallback_path, std::ios::binary);
+            std::string payload((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+            auto key = sha256_bytes(machine_identifier());
+            std::string plain;
+            if (!key.empty()) {
+                std::string encoded_payload = payload;
+                bool integrity_ok = true;
 
-            if (payload.rfind("v2:", 0) == 0) {
-                auto delim = payload.find(':', 3);
-                if (delim == std::string::npos) {
-                    integrity_ok = false;
-                } else {
-                    std::string stored_hmac = payload.substr(3, delim - 3);
-                    std::string lower_stored = stored_hmac;
-                    std::transform(lower_stored.begin(), lower_stored.end(), lower_stored.begin(), ::tolower);
-                    encoded_payload = payload.substr(delim + 1);
-
-                    std::string computed_hmac = hmac_sha256_hex(encoded_payload, key);
-                    std::transform(computed_hmac.begin(), computed_hmac.end(), computed_hmac.begin(), ::tolower);
-                    if (computed_hmac.empty() || computed_hmac != lower_stored) {
+                if (payload.rfind("v2:", 0) == 0) {
+                    auto delim = payload.find(':', 3);
+                    if (delim == std::string::npos) {
                         integrity_ok = false;
-                        BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: refresh token integrity check failed (HMAC mismatch)";
+                    } else {
+                        std::string stored_hmac = payload.substr(3, delim - 3);
+                        std::string lower_stored = stored_hmac;
+                        std::transform(lower_stored.begin(), lower_stored.end(), lower_stored.begin(), ::tolower);
+                        encoded_payload = payload.substr(delim + 1);
+
+                        std::string computed_hmac = hmac_sha256_hex(encoded_payload, key);
+                        std::transform(computed_hmac.begin(), computed_hmac.end(), computed_hmac.begin(), ::tolower);
+                        if (computed_hmac.empty() || computed_hmac != lower_stored) {
+                            integrity_ok = false;
+                            BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: refresh token integrity check failed (HMAC mismatch)";
+                        }
                     }
                 }
-            }
 
-            if (integrity_ok && aes256gcm_decrypt(encoded_payload, key, plain) && !plain.empty()) {
-                out_token = plain;
-                BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: loaded refresh token from encrypted fallback";
+                if (integrity_ok && aes256gcm_decrypt(encoded_payload, key, plain) && !plain.empty()) {
+                    out_token = plain;
+                    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: loaded refresh token from encrypted file";
 
-                // Upgrade legacy payloads to signed format
-                if (payload.rfind("v2:", 0) != 0) {
-                    persist_refresh_token(out_token);
+                    // Upgrade legacy payloads to signed format
+                    if (payload.rfind("v2:", 0) != 0) {
+                        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: upgrading legacy token format to v2";
+                        persist_refresh_token(out_token);
+                    }
+                    return true;
                 }
-                return true;
             }
+        }
+    } else {
+        // Load from wxSecretStore only
+        wxSecretStore store = wxSecretStore::GetDefault();
+        if (store.IsOk()) {
+            BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: System Keychain is available, attempting load";
+            wxString username;
+            wxSecretValue secret;
+            if (store.Load(SECRET_STORE_SERVICE, username, secret) && secret.IsOk()) {
+                out_token.assign(static_cast<const char*>(secret.GetData()), secret.GetSize());
+                if (!out_token.empty()) {
+                    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: loaded refresh token from System Keychain";
+                    return true;
+                }
+            } else {
+                BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: System Keychain load failed or data is invalid";
+            }
+        } else {
+            BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: System Keychain is NOT available";
         }
     }
 

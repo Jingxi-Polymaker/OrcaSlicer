@@ -112,6 +112,8 @@ public:
     void configure_urls(AppConfig* app_config);
     void set_api_base_url(const std::string& url);
     void set_auth_base_url(const std::string& url);
+    void set_use_encrypted_token_file(bool use);
+    bool get_use_encrypted_token_file() const;
 
     // ========================================================================
     // ICloudServiceAgent Interface Implementation - Lifecycle Methods
@@ -319,6 +321,7 @@ private:
     std::map<std::string, std::string> extra_headers;
     std::map<std::string, std::string> auth_headers;
     mutable std::mutex headers_mutex;
+    bool m_use_encrypted_token_file{false};
 
     // Member variables - auth state
     PkceBundle pkce_bundle;

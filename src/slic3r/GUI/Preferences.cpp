@@ -1412,6 +1412,11 @@ void PreferencesDialog::create_items()
     auto item_system_sync      = create_item_checkbox(_L("Update built-in Presets automatically."), "", "sync_system_preset");
     g_sizer->Add(item_system_sync);
 
+    auto item_token_storage    = create_item_checkbox(_L("Use encrypted file for token storage"),
+                                                      _L("Store authentication tokens in an encrypted file instead of the system keychain. (Requires restart)"),
+                                                      SETTING_USE_ENCRYPTED_TOKEN_FILE);
+    g_sizer->Add(item_token_storage);
+
     //// ONLINE > Network plugin
     g_sizer->Add(create_item_title(_L("Network plugin")), 1, wxEXPAND);
 
