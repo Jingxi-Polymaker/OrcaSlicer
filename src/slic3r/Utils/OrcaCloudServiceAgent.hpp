@@ -131,7 +131,7 @@ public:
     std::string get_user_id() override;
     std::string get_user_name() override;
     std::string get_user_avatar() override;
-    std::string get_user_nickanme() override;
+    std::string get_user_nickname() override;
 
     // ========================================================================
     // ICloudServiceAgent Interface Implementation - Login UI Support
@@ -235,33 +235,15 @@ public:
     int set_get_country_code_fn(GetCountryCodeFn fn) override;
     int set_queue_on_main_fn(QueueOnMainFn fn) override;
 
-    // ========================================================================
-    // Additional Public Methods - Sync Protocol
-    // ========================================================================
-    int sync_pull(
-        std::function<void(const SyncPullResponse&)> on_success,
-        std::function<void(int http_code, const std::string& error)> on_error
-    );
-
-    SyncPushResult sync_push(
-        const std::string& profile_id,
-        const std::string& name,
-        const nlohmann::json& content,
-        const std::string& original_updated_at = ""
-    );
-
     // Sync state management
     void load_sync_state();
     void save_sync_state();
     void clear_sync_state();
     const SyncState& get_sync_state() const { return sync_state; }
 
-    std::string get_backend_url() const { return api_base_url; }
-
     // ========================================================================
     // Additional Public Methods - Auth
     // ========================================================================
-    void set_extra_headers(const std::map<std::string, std::string>& extra);
     void set_session_handler(SessionHandler handler);
     void set_on_login_complete_handler(OnLoginCompleteHandler handler);
 
@@ -287,10 +269,21 @@ public:
                           const std::string& avatar,
                           const std::string& refresh_token = "");
     void clear_session();
-    bool is_logged_in() const;
-    std::string get_user_nickname() const;
 
 private:
+    // Sync protocol helpers
+    int sync_pull(
+        std::function<void(const SyncPullResponse&)> on_success,
+        std::function<void(int http_code, const std::string& error)> on_error
+    );
+
+    SyncPushResult sync_push(
+        const std::string& profile_id,
+        const std::string& name,
+        const nlohmann::json& content,
+        const std::string& original_updated_at = ""
+    );
+
     // HTTP request helpers
     int http_get(const std::string& path, std::string* response_body, unsigned int* http_code);
     int http_post(const std::string& path, const std::string& body, std::string* response_body, unsigned int* http_code);

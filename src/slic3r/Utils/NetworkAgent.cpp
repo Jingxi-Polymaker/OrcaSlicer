@@ -381,9 +381,9 @@ std::string NetworkAgent::get_user_avatar()
     return "";
 }
 
-std::string NetworkAgent::get_user_nickanme()
+std::string NetworkAgent::get_user_nickname()
 {
-    if (m_cloud_agent) return m_cloud_agent->get_user_nickanme();
+    if (m_cloud_agent) return m_cloud_agent->get_user_nickname();
     return "";
 }
 

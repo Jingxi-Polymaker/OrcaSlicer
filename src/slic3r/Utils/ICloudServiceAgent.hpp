@@ -115,7 +115,7 @@ public:
     /**
      * Return the nickname for the current user.
      */
-    virtual std::string get_user_nickanme() = 0;
+    virtual std::string get_user_nickname() = 0;
 
     // ========================================================================
     // Login UI Support

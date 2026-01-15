@@ -663,7 +663,8 @@ int OrcaCloudServiceAgent::change_user(std::string user_info)
 
 bool OrcaCloudServiceAgent::is_user_login()
 {
-    return is_logged_in();
+    std::lock_guard<std::mutex> lock(session_mutex);
+    return session.logged_in;
 }
 
 int OrcaCloudServiceAgent::user_logout(bool request)
@@ -730,12 +731,7 @@ std::string OrcaCloudServiceAgent::get_user_avatar()
     return session.user_avatar;
 }
 
-std::string OrcaCloudServiceAgent::get_user_nickanme()
-{
-    return get_user_nickname();
-}
-
-std::string OrcaCloudServiceAgent::get_user_nickname() const
+std::string OrcaCloudServiceAgent::get_user_nickname()
 {
     std::lock_guard<std::mutex> lock(session_mutex);
     return session.user_nickname;
@@ -749,7 +745,7 @@ std::string OrcaCloudServiceAgent::build_login_cmd()
 {
     // When already signed in, emit the homepage payload so the web UI
     // can flip to the logged-in state without re-opening the login flow.
-    if (is_logged_in()) {
+    if (is_user_login()) {
         pt::ptree cmd;
         cmd.put("command", "studio_userlogin");
 
@@ -1390,12 +1386,6 @@ void OrcaCloudServiceAgent::clear_sync_state()
 // Auth - PKCE and Session Management
 // ============================================================================
 
-void OrcaCloudServiceAgent::set_extra_headers(const std::map<std::string, std::string>& extra)
-{
-    std::lock_guard<std::mutex> lock(headers_mutex);
-    extra_headers = extra;
-}
-
 void OrcaCloudServiceAgent::set_session_handler(SessionHandler handler)
 {
     session_handler = std::move(handler);
@@ -1819,12 +1809,6 @@ void OrcaCloudServiceAgent::clear_session()
         session = SessionInfo{};
     }
     clear_refresh_token();
-}
-
-bool OrcaCloudServiceAgent::is_logged_in() const
-{
-    std::lock_guard<std::mutex> lock(session_mutex);
-    return session.logged_in;
 }
 
 // ============================================================================

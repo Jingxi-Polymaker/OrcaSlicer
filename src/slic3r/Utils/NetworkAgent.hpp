@@ -93,7 +93,7 @@ public:
     std::string get_user_id();
     std::string get_user_name();
     std::string get_user_avatar();
-    std::string get_user_nickanme();
+    std::string get_user_nickname();
     std::string build_login_cmd();
     std::string build_logout_cmd();
     std::string build_login_info();

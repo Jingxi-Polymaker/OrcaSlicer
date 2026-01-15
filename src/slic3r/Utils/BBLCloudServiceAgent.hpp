@@ -37,7 +37,7 @@ public:
     std::string get_user_id() override;
     std::string get_user_name() override;
     std::string get_user_avatar() override;
-    std::string get_user_nickanme() override;
+    std::string get_user_nickname() override;
 
     // Login UI Support
     std::string build_login_cmd() override;

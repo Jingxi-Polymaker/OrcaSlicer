@@ -141,7 +141,7 @@ std::string BBLCloudServiceAgent::get_user_avatar()
     return "";
 }
 
-std::string BBLCloudServiceAgent::get_user_nickanme()
+std::string BBLCloudServiceAgent::get_user_nickname()
 {
     auto& plugin = BBLNetworkPlugin::instance();
     auto agent = plugin.get_agent();
