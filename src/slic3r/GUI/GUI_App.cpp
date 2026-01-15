@@ -1957,11 +1957,9 @@ void GUI_App::init_networking_callbacks()
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__<< boost::format(": enter, m_agent=%1%")%m_agent;
     if (m_agent) {
         //set callbacks
-        // if(m_agent->get_version() != "orca_network") {
-            m_agent->set_on_user_login_fn([this](int online_login, bool login) {
-                GUI::wxGetApp().request_user_handle(online_login);
-            });
-        // }
+        // m_agent->set_on_user_login_fn([this](int online_login, bool login) {
+        //     GUI::wxGetApp().request_user_handle(online_login);
+        // });
 
         m_agent->set_server_callback([](std::string url, int status) {
             BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(": server_callback, url=%1%, status=%2%") % url % status;

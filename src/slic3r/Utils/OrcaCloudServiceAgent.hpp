@@ -276,7 +276,6 @@ public:
     bool refresh_if_expiring(std::chrono::seconds skew, const std::string& reason);
     bool refresh_from_storage(const std::string& reason, bool async = false);
     bool refresh_now(const std::string& refresh_token, const std::string& reason, bool async = false);
-    void try_refresh_async(const std::string& refresh_token);
     bool refresh_session_with_token(const std::string& refresh_token);
 
     // Session state helpers

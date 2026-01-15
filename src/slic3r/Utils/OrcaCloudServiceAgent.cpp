@@ -419,7 +419,7 @@ int OrcaCloudServiceAgent::start()
     std::string stored_refresh;
     if (load_refresh_token(stored_refresh) && !stored_refresh.empty()) {
         BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Found stored refresh token, attempting silent sign-in";
-        try_refresh_async(stored_refresh);
+        refresh_now(stored_refresh, "refresh token", false);
     }
 
     return BAMBU_NETWORK_SUCCESS;
@@ -1246,7 +1246,7 @@ int OrcaCloudServiceAgent::sync_pull(
                 upsert.id = item.value("id", "");
                 upsert.name = item.value("name", "");
                 upsert.updated_at = item.value(ORCA_JSON_KEY_UPDATE_TIME, "");
-                upsert.created_at = item.value(ORCA_JSON_KEY_UPDATE_TIME, "");
+                upsert.created_at = item.value(ORCA_JSON_KEY_CREATED_TIME, "");
                 if (item.contains("content")) {
                     upsert.content = item["content"];
                 }
@@ -1691,11 +1691,6 @@ bool OrcaCloudServiceAgent::refresh_if_expiring(std::chrono::seconds skew, const
     return refresh_from_storage(reason + "_retry", false);
 }
 
-void OrcaCloudServiceAgent::try_refresh_async(const std::string& refresh_token)
-{
-    refresh_now(refresh_token, "async_refresh", true);
-}
-
 bool OrcaCloudServiceAgent::refresh_session_with_token(const std::string& refresh_token)
 {
     std::string body = "{\"refresh_token\":\"" + refresh_token + "\"}";
@@ -1754,7 +1749,7 @@ bool OrcaCloudServiceAgent::refresh_session_with_token(const std::string& refres
         BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: token refresh successful - user_id=" << user_id;
         bool success = set_user_session(access_token, user_id, username, name, nickname, avatar, new_refresh_token);
         if (success) {
-            invoke_user_login_callback(1, true);
+            invoke_user_login_callback(0, true);
             if (on_login_complete_handler) {
                 on_login_complete_handler(true, user_id);
             }
