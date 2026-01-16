@@ -143,6 +143,20 @@ NetworkAgent::~NetworkAgent()
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", this %1%") % this;
 }
 
+void NetworkAgent::set_printer_agent(std::shared_ptr<IPrinterAgent> printer_agent)
+{
+    std::lock_guard<std::mutex> lock(m_agent_mutex);
+
+    if (!printer_agent) {
+        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": null printer agent provided";
+        return;
+    }
+
+    m_printer_agent = std::move(printer_agent);
+
+    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": agent switched successfully";
+}
+
 void* NetworkAgent::get_network_agent()
 {
     return BBLNetworkPlugin::instance().get_agent();

@@ -12,8 +12,16 @@
 #include "libslic3r/AppConfig.hpp"
 #include <memory>
 #include <string>
+#include <functional>
+#include <vector>
+#include <map>
+#include <mutex>
 
 namespace Slic3r {
+
+// Forward declarations
+class ICloudServiceAgent;
+class IPrinterAgent;
 
 /**
  * AgentProvider - Specifies which implementation to use for each agent type.
@@ -39,6 +47,24 @@ struct AgentConfiguration {
     AgentProvider printer_provider = AgentProvider::Orca;
 };
 
+// Factory function type for creating printer agents
+using PrinterAgentFactory = std::function<std::shared_ptr<IPrinterAgent>(
+    std::shared_ptr<ICloudServiceAgent> cloud_agent,
+    const std::string& log_dir
+)>;
+
+// Information about a registered printer agent
+struct PrinterAgentInfo {
+    std::string id;           // e.g., "orca", "bbl"
+    std::string display_name; // e.g., "Orca Native", "Bambu Lab"
+    PrinterAgentFactory factory; // Function to create the agent
+
+    PrinterAgentInfo(const std::string& id_,
+                     const std::string& display_name_,
+                     PrinterAgentFactory factory_)
+        : id(id_), display_name(display_name_), factory(std::move(factory_)) {}
+};
+
 /**
  * NetworkAgentFactory - Factory for creating network agent instances
  *
@@ -46,26 +72,81 @@ struct AgentConfiguration {
  * configuration or runtime decisions. Supports:
  * - NetworkAgent (dynamic library wrapper / facade)
  * - Per-agent creation for mixed Orca/BBL modes
+ * - Dynamic printer agent registration and discovery
  *
  * Note: Auth functionality is part of ICloudServiceAgent. The cloud service agent
  * handles both authentication and cloud services.
  *
  * Usage:
- *   // Legacy creation (single implementation)
- *   auto agent = NetworkAgentFactory::create_pure_orca(log_dir);
+ *   // Register a printer agent type at startup
+ *   NetworkAgentFactory::register_printer_agent("orca", "Orca Native",
+ *       [](std::shared_ptr<ICloudServiceAgent> cloud, const std::string& log_dir) {
+ *           auto agent = std::make_shared<OrcaPrinterAgent>(log_dir);
+ *           if (cloud) agent->set_cloud_agent(cloud);
+ *           return agent;
+ *       });
  *
- *   // Per-agent creation (mixed mode)
- *   auto cloud = NetworkAgentFactory::create_cloud_agent(AgentProvider::Orca, log_dir);
- *   auto printer = NetworkAgentFactory::create_printer_agent(AgentProvider::BBL, cloud, log_dir);
- *   auto agent = NetworkAgentFactory::create_from_agents(cloud, printer);
+ *   // Get list of registered agents for UI
+ *   auto agents = NetworkAgentFactory::get_registered_printer_agents();
  *
- *   // Configured creation (from AgentConfiguration)
- *   AgentConfiguration config;
- *   config.printer_provider = AgentProvider::BBL;
- *   auto agent = NetworkAgentFactory::create_configured(log_dir, config);
+ *   // Create a printer agent by ID
+ *   auto printer = NetworkAgentFactory::create_printer_agent_by_id("orca", cloud, log_dir);
  */
 class NetworkAgentFactory {
 public:
+    // ========================================================================
+    // Printer Agent Registry
+    // ========================================================================
+
+    /**
+     * Register a printer agent type
+     *
+     * @param id Unique identifier for the agent (e.g., "orca", "bbl")
+     * @param display_name Human-readable name for UI
+     * @param factory Factory function to create the agent
+     */
+    static void register_printer_agent(const std::string& id,
+                                      const std::string& display_name,
+                                      PrinterAgentFactory factory);
+
+    /**
+     * Check if an agent ID is registered
+     */
+    static bool is_printer_agent_registered(const std::string& id);
+
+    /**
+     * Get info about a registered agent
+     */
+    static const PrinterAgentInfo* get_printer_agent_info(const std::string& id);
+
+    /**
+     * Get all registered printer agents (for UI population)
+     */
+    static std::vector<PrinterAgentInfo> get_registered_printer_agents();
+
+    /**
+     * Create a printer agent by ID (using registry)
+     *
+     * @param id Agent ID to create
+     * @param cloud_agent Cloud agent for token access
+     * @param log_dir Directory for log files
+     * @return Shared pointer to IPrinterAgent, or nullptr if ID not found
+     */
+    static std::shared_ptr<IPrinterAgent> create_printer_agent_by_id(
+        const std::string& id,
+        std::shared_ptr<ICloudServiceAgent> cloud_agent,
+        const std::string& log_dir);
+
+    /**
+     * Get default printer agent ID
+     */
+    static std::string get_default_printer_agent_id();
+
+    /**
+     * Set a specific agent as the default
+     */
+    static void set_default_printer_agent_id(const std::string& id);
+
     // ========================================================================
     // Per-Agent Factory Methods
     // ========================================================================
@@ -254,6 +335,11 @@ private:
     ~NetworkAgentFactory() = delete;
     NetworkAgentFactory(const NetworkAgentFactory&) = delete;
     NetworkAgentFactory& operator=(const NetworkAgentFactory&) = delete;
+
+    // Registry state
+    static std::mutex s_registry_mutex;
+    static std::map<std::string, PrinterAgentInfo> s_printer_agents;
+    static std::string s_default_agent_id;
 };
 
 /**

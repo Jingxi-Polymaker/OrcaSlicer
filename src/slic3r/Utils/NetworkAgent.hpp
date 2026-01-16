@@ -54,6 +54,9 @@ public:
     std::shared_ptr<ICloudServiceAgent> get_cloud_agent() const { return m_cloud_agent; }
     std::shared_ptr<IPrinterAgent> get_printer_agent() const { return m_printer_agent; }
 
+    // Set the printer agent (for dynamic agent switching)
+    void set_printer_agent(std::shared_ptr<IPrinterAgent> printer_agent);
+
     // Instance methods - delegate to sub-agents or BBLNetworkPlugin
     int init_log();
     int set_config_dir(std::string config_dir);
@@ -158,6 +161,7 @@ public:
     void* get_network_agent();
 
 private:
+    mutable std::mutex m_agent_mutex;  // Protect agent swapping
     bool enable_track = false;
 
     // Sub-agent composition (for Orca/BBL mixed mode)

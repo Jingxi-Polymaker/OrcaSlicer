@@ -3368,6 +3368,39 @@ __retry:
     }
     }
 
+    // Register available printer agents
+    // NOTE: These registrations should happen before creating the agent
+    // Register Orca Printer Agent
+    NetworkAgentFactory::register_printer_agent("orca", "Orca Native",
+        [](std::shared_ptr<ICloudServiceAgent> cloud_agent, const std::string& log_dir) -> std::shared_ptr<IPrinterAgent> {
+            auto agent = std::make_shared<OrcaPrinterAgent>(log_dir);
+            if (cloud_agent) {
+                agent->set_cloud_agent(cloud_agent);
+            }
+            return agent;
+        });
+
+    // Register BBL Printer Agent (only if BBL plugin is loaded)
+    // Note: BBLNetworkPlugin is a singleton that may or may not be loaded
+    extern class BBLNetworkPlugin* g_bbl_network_plugin;
+    bool bbl_plugin_loaded = (Slic3r::NetworkAgent::is_network_module_loaded() &&
+                               Slic3r::BBLNetworkPlugin::instance().is_loaded());
+
+    if (bbl_plugin_loaded) {
+        NetworkAgentFactory::register_printer_agent("bbl", "Bambu Lab",
+            [](std::shared_ptr<ICloudServiceAgent> cloud_agent, const std::string& log_dir) -> std::shared_ptr<IPrinterAgent> {
+                auto& plugin = Slic3r::BBLNetworkPlugin::instance();
+                if (!plugin.is_loaded() || !plugin.has_agent()) {
+                    return nullptr;
+                }
+                auto agent = std::make_shared<BBLPrinterAgent>();
+                if (cloud_agent) {
+                    agent->set_cloud_agent(cloud_agent);
+                }
+                return agent;
+            });
+    }
+
     if (create_network_agent) {
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", create network agent...");
         //std::string data_dir = wxStandardPaths::Get().GetUserDataDir().ToUTF8().data();
@@ -3463,6 +3496,53 @@ unsigned GUI_App::get_colour_approx_luma(const wxColour &colour)
         g * g * .691 +
         b * b * .068
         ));
+}
+
+void GUI_App::switch_printer_agent(const std::string& agent_id, const std::string& print_host_url)
+{
+    if (!m_agent) {
+        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": no agent exists";
+        return;
+    }
+
+    // Use registry to validate and create agent
+    // If empty, use default
+    std::string effective_agent_id = agent_id.empty() ? NetworkAgentFactory::get_default_printer_agent_id() : agent_id;
+
+    // Check if agent is registered
+    if (!NetworkAgentFactory::is_printer_agent_registered(effective_agent_id)) {
+        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": unregistered agent ID '" << effective_agent_id
+                                   << "', keeping current agent";
+        // Keep current agent, don't switch
+        return;
+    }
+
+    std::string log_dir = data_dir();
+    std::shared_ptr<ICloudServiceAgent> cloud_agent = m_agent->get_cloud_agent();
+    if (!cloud_agent) {
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": no cloud agent available";
+        return;
+    }
+
+    // Create new printer agent via registry
+    std::shared_ptr<IPrinterAgent> new_printer_agent =
+        NetworkAgentFactory::create_printer_agent_by_id(effective_agent_id, cloud_agent, log_dir);
+
+    if (!new_printer_agent) {
+        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": failed to create agent '" << effective_agent_id
+                                   << "', keeping current agent";
+        return;
+    }
+
+    // Swap the agent
+    m_agent->set_printer_agent(new_printer_agent);
+
+    // Update dependent managers
+    if (m_device_manager) {
+        m_device_manager->set_agent(m_agent);
+    }
+
+    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": printer agent switched to " << effective_agent_id;
 }
 
 bool GUI_App::dark_mode()

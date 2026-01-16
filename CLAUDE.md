@@ -29,23 +29,12 @@ build_release_vs2022.bat slicer
 
 ### Building on macOS
 ```bash
-# Build everything (dependencies and slicer)
-./build_release_macos.sh
-
 # Build only dependencies
 ./build_release_macos.sh -d
 
 # Build only slicer (after deps are built)
-./build_release_macos.sh -s
+cmake --build build/arm64 --config RelWithDebInfo --target all --
 
-# Use Ninja generator for faster builds
-./build_release_macos.sh -x
-
-# Build for specific architecture
-./build_release_macos.sh -a arm64    # or x86_64 or universal
-
-# Build for specific macOS version target
-./build_release_macos.sh -t 11.3
 ```
 
 ### Building on Linux
