@@ -10,6 +10,7 @@ OrcaSlicer is an open-source 3D slicer application forked from Bambu Studio, bui
 
 ## Build Commands
 
+**Never delete whole build folder without user confirmation!**
 ### Building on Windows
 ```bash
 # Build everything
