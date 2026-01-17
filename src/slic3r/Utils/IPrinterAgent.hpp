@@ -214,6 +214,11 @@ public:
      * Provide main thread queue callback.
      */
     virtual int set_queue_on_main_fn(QueueOnMainFn fn) = 0;
+
+    /**
+     * Get agent information.
+     */
+    virtual AgentInfo get_agent_info() = 0;
 };
 
 } // namespace Slic3r

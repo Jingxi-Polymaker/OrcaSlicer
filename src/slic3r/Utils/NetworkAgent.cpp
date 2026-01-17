@@ -118,6 +118,7 @@ NetworkAgent::NetworkAgent(std::string log_dir)
         m_cloud_agent = std::make_shared<BBLCloudServiceAgent>();
         m_printer_agent = std::make_shared<BBLPrinterAgent>();
         m_printer_agent->set_cloud_agent(m_cloud_agent);
+        m_printer_agent_id = m_printer_agent->get_agent_info().id;
 
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", this %1%, agent=%2%, log_dir=%3%")
             % this % plugin.get_agent() % log_dir;
@@ -146,14 +147,37 @@ NetworkAgent::~NetworkAgent()
 
 void NetworkAgent::set_printer_agent(std::shared_ptr<IPrinterAgent> printer_agent)
 {
-    std::lock_guard<std::mutex> lock(m_agent_mutex);
+    // Local copies to allow safe access after releasing the lock.
+    // This pattern ensures the objects stay alive (via shared_ptr refcount) even if
+    // another thread modifies m_printer_agent or m_printer_callbacks after we unlock.
+    std::shared_ptr<IPrinterAgent> new_printer_agent;
+    PrinterCallbacks callbacks;
 
-    if (!printer_agent) {
-        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": null printer agent provided";
-        return;
+    {
+        // Critical section: protect access to shared state
+        std::lock_guard<std::mutex> lock(m_agent_mutex);
+
+        if (!printer_agent) {
+            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": null printer agent provided";
+            return;
+        }
+
+        // Take ownership of the incoming agent and update the agent ID
+        m_printer_agent = std::move(printer_agent);
+        m_printer_agent_id = m_printer_agent->get_agent_info().id;
+
+        // Create local shared_ptr copies - this increments the reference count,
+        // guaranteeing the agent object stays alive even if m_printer_agent
+        // is modified by another thread after we unlock
+        new_printer_agent = m_printer_agent;
+        callbacks = m_printer_callbacks;
     }
+    // Lock released here - m_agent_mutex is now free for other threads
 
-    m_printer_agent = std::move(printer_agent);
+    // Apply callbacks OUTSIDE the lock to avoid deadlock risk and minimize
+    // critical section duration. The local shared_ptr copy ensures the agent
+    // cannot be destroyed while we're using it.
+    apply_printer_callbacks(new_printer_agent, callbacks);
 
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": agent switched successfully";
 }
@@ -161,6 +185,24 @@ void NetworkAgent::set_printer_agent(std::shared_ptr<IPrinterAgent> printer_agen
 void* NetworkAgent::get_network_agent()
 {
     return BBLNetworkPlugin::instance().get_agent();
+}
+
+void NetworkAgent::apply_printer_callbacks(const std::shared_ptr<IPrinterAgent>& printer_agent,
+                                           const PrinterCallbacks& callbacks)
+{
+    if (!printer_agent) {
+        return;
+    }
+
+    printer_agent->set_on_ssdp_msg_fn(callbacks.on_ssdp_msg_fn);
+    printer_agent->set_on_printer_connected_fn(callbacks.on_printer_connected_fn);
+    printer_agent->set_on_subscribe_failure_fn(callbacks.on_subscribe_failure_fn);
+    printer_agent->set_on_message_fn(callbacks.on_message_fn);
+    printer_agent->set_on_user_message_fn(callbacks.on_user_message_fn);
+    printer_agent->set_on_local_connect_fn(callbacks.on_local_connect_fn);
+    printer_agent->set_on_local_message_fn(callbacks.on_local_message_fn);
+    printer_agent->set_queue_on_main_fn(callbacks.queue_on_main_fn);
+    printer_agent->set_server_callback(callbacks.on_server_err_fn);
 }
 
 // ============================================================================
@@ -199,7 +241,13 @@ int NetworkAgent::start()
 
 int NetworkAgent::set_on_ssdp_msg_fn(OnMsgArrivedFn fn)
 {
-    if (m_printer_agent) return m_printer_agent->set_on_ssdp_msg_fn(fn);
+    std::shared_ptr<IPrinterAgent> printer_agent;
+    {
+        std::lock_guard<std::mutex> lock(m_agent_mutex);
+        m_printer_callbacks.on_ssdp_msg_fn = fn;
+        printer_agent = m_printer_agent;
+    }
+    if (printer_agent) return printer_agent->set_on_ssdp_msg_fn(fn);
     return -1;
 }
 
@@ -211,7 +259,13 @@ int NetworkAgent::set_on_user_login_fn(OnUserLoginFn fn)
 
 int NetworkAgent::set_on_printer_connected_fn(OnPrinterConnectedFn fn)
 {
-    if (m_printer_agent) return m_printer_agent->set_on_printer_connected_fn(fn);
+    std::shared_ptr<IPrinterAgent> printer_agent;
+    {
+        std::lock_guard<std::mutex> lock(m_agent_mutex);
+        m_printer_callbacks.on_printer_connected_fn = fn;
+        printer_agent = m_printer_agent;
+    }
+    if (printer_agent) return printer_agent->set_on_printer_connected_fn(fn);
     return -1;
 }
 
@@ -235,40 +289,79 @@ int NetworkAgent::set_get_country_code_fn(GetCountryCodeFn fn)
 
 int NetworkAgent::set_on_subscribe_failure_fn(GetSubscribeFailureFn fn)
 {
-    if (m_printer_agent) return m_printer_agent->set_on_subscribe_failure_fn(fn);
+    std::shared_ptr<IPrinterAgent> printer_agent;
+    {
+        std::lock_guard<std::mutex> lock(m_agent_mutex);
+        m_printer_callbacks.on_subscribe_failure_fn = fn;
+        printer_agent = m_printer_agent;
+    }
+    if (printer_agent) return printer_agent->set_on_subscribe_failure_fn(fn);
     return -1;
 }
 
 int NetworkAgent::set_on_message_fn(OnMessageFn fn)
 {
-    if (m_printer_agent) return m_printer_agent->set_on_message_fn(fn);
+    std::shared_ptr<IPrinterAgent> printer_agent;
+    {
+        std::lock_guard<std::mutex> lock(m_agent_mutex);
+        m_printer_callbacks.on_message_fn = fn;
+        printer_agent = m_printer_agent;
+    }
+    if (printer_agent) return printer_agent->set_on_message_fn(fn);
     return -1;
 }
 
 int NetworkAgent::set_on_user_message_fn(OnMessageFn fn)
 {
-    if (m_printer_agent) return m_printer_agent->set_on_user_message_fn(fn);
+    std::shared_ptr<IPrinterAgent> printer_agent;
+    {
+        std::lock_guard<std::mutex> lock(m_agent_mutex);
+        m_printer_callbacks.on_user_message_fn = fn;
+        printer_agent = m_printer_agent;
+    }
+    if (printer_agent) return printer_agent->set_on_user_message_fn(fn);
     return -1;
 }
 
 int NetworkAgent::set_on_local_connect_fn(OnLocalConnectedFn fn)
 {
-    if (m_printer_agent) return m_printer_agent->set_on_local_connect_fn(fn);
+    std::shared_ptr<IPrinterAgent> printer_agent;
+    {
+        std::lock_guard<std::mutex> lock(m_agent_mutex);
+        m_printer_callbacks.on_local_connect_fn = fn;
+        printer_agent = m_printer_agent;
+    }
+    if (printer_agent) return printer_agent->set_on_local_connect_fn(fn);
     return -1;
 }
 
 int NetworkAgent::set_on_local_message_fn(OnMessageFn fn)
 {
-    if (m_printer_agent) return m_printer_agent->set_on_local_message_fn(fn);
+    std::shared_ptr<IPrinterAgent> printer_agent;
+    {
+        std::lock_guard<std::mutex> lock(m_agent_mutex);
+        m_printer_callbacks.on_local_message_fn = fn;
+        printer_agent = m_printer_agent;
+    }
+    if (printer_agent) return printer_agent->set_on_local_message_fn(fn);
     return -1;
 }
 
 int NetworkAgent::set_queue_on_main_fn(QueueOnMainFn fn)
 {
     // Set on both agents
+    std::shared_ptr<ICloudServiceAgent> cloud_agent;
+    std::shared_ptr<IPrinterAgent> printer_agent;
+    {
+        std::lock_guard<std::mutex> lock(m_agent_mutex);
+        m_printer_callbacks.queue_on_main_fn = fn;
+        cloud_agent = m_cloud_agent;
+        printer_agent = m_printer_agent;
+    }
+
     int ret = 0;
-    if (m_cloud_agent) ret = m_cloud_agent->set_queue_on_main_fn(fn);
-    if (m_printer_agent) m_printer_agent->set_queue_on_main_fn(fn);
+    if (cloud_agent) ret = cloud_agent->set_queue_on_main_fn(fn);
+    if (printer_agent) printer_agent->set_queue_on_main_fn(fn);
     return ret;
 }
 
@@ -434,7 +527,13 @@ int NetworkAgent::bind_detect(std::string dev_ip, std::string sec_link, detectRe
 
 int NetworkAgent::set_server_callback(OnServerErrFn fn)
 {
-    if (m_printer_agent) return m_printer_agent->set_server_callback(fn);
+    std::shared_ptr<IPrinterAgent> printer_agent;
+    {
+        std::lock_guard<std::mutex> lock(m_agent_mutex);
+        m_printer_callbacks.on_server_err_fn = fn;
+        printer_agent = m_printer_agent;
+    }
+    if (printer_agent) return printer_agent->set_server_callback(fn);
     return -1;
 }
 

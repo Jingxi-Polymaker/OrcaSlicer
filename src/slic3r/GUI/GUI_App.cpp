@@ -3471,8 +3471,6 @@ unsigned GUI_App::get_colour_approx_luma(const wxColour &colour)
 
 void GUI_App::switch_printer_agent(const std::string& agent_id)
 {
-    // ORCA todo: temporarily disable this feature, we will enable it later.
-    return;
     if (!m_agent) {
         BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": no agent exists";
         return;
@@ -3487,6 +3485,11 @@ void GUI_App::switch_printer_agent(const std::string& agent_id)
         BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": unregistered agent ID '" << effective_agent_id
                                    << "', keeping current agent";
         // Keep current agent, don't switch
+        return;
+    }
+
+    const auto current_agent_id = m_agent->get_printer_agent()->get_agent_info().id;
+    if (!current_agent_id.empty() && current_agent_id == effective_agent_id) {
         return;
     }
 

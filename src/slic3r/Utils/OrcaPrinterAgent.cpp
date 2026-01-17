@@ -6,7 +6,7 @@
 // Self-registration: OrcaPrinterAgent registers itself before main()
 namespace {
 inline static const bool s_orca_agent_registered = []() {
-    auto info = Slic3r::OrcaPrinterAgent::get_agent_info();
+    auto info = Slic3r::OrcaPrinterAgent::get_agent_info_static();
     return Slic3r::NetworkAgentFactory::register_printer_agent(
         info.id,
         info.name,
@@ -155,7 +155,7 @@ int OrcaPrinterAgent::set_user_selected_machine(std::string dev_id)
 // ============================================================================
 // Agent Information
 // ============================================================================
-AgentInfo OrcaPrinterAgent::get_agent_info()
+AgentInfo OrcaPrinterAgent::get_agent_info_static()
 {
     return AgentInfo{
         .id = "orca",

@@ -56,7 +56,8 @@ public:
      *
      * @return AgentInfo struct containing agent identification and descriptive information
      */
-     static AgentInfo get_agent_info();
+     static AgentInfo get_agent_info_static();
+     AgentInfo get_agent_info() override { return get_agent_info_static(); }
 
     // Print Job Operations
     int start_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) override;

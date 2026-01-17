@@ -161,12 +161,29 @@ public:
     void* get_network_agent();
 
 private:
+    struct PrinterCallbacks {
+        OnMsgArrivedFn on_ssdp_msg_fn;
+        OnPrinterConnectedFn on_printer_connected_fn;
+        GetSubscribeFailureFn on_subscribe_failure_fn;
+        OnMessageFn on_message_fn;
+        OnMessageFn on_user_message_fn;
+        OnLocalConnectedFn on_local_connect_fn;
+        OnMessageFn on_local_message_fn;
+        QueueOnMainFn queue_on_main_fn;
+        OnServerErrFn on_server_err_fn;
+    };
+
+    void apply_printer_callbacks(const std::shared_ptr<IPrinterAgent>& printer_agent,
+                                 const PrinterCallbacks& callbacks);
+
     mutable std::mutex m_agent_mutex;  // Protect agent swapping
+    PrinterCallbacks m_printer_callbacks;
     bool enable_track = false;
 
     // Sub-agent composition (for Orca/BBL mixed mode)
     std::shared_ptr<ICloudServiceAgent> m_cloud_agent;
     std::shared_ptr<IPrinterAgent> m_printer_agent;
+    std::string m_printer_agent_id;
 };
 
 }

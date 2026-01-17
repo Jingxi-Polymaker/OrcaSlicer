@@ -9,7 +9,7 @@
 // internally by BBLPrinterAgent and BBLNetworkPlugin at runtime.
 namespace {
 inline static const bool s_bbl_agent_registered = []() {
-    auto info = Slic3r::BBLPrinterAgent::get_agent_info();
+    auto info = Slic3r::BBLPrinterAgent::get_agent_info_static();
     return Slic3r::NetworkAgentFactory::register_printer_agent(
         info.id,
         info.name,
@@ -226,7 +226,7 @@ int BBLPrinterAgent::set_user_selected_machine(std::string dev_id)
 // ============================================================================
 // Agent Information
 // ============================================================================
-AgentInfo BBLPrinterAgent::get_agent_info()
+AgentInfo BBLPrinterAgent::get_agent_info_static()
 {
     return AgentInfo{
         .id = "bbl",
