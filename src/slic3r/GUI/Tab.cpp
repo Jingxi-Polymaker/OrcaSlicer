@@ -2136,21 +2136,21 @@ void Tab::on_presets_changed()
 
 void Tab::update_printer_agent_if_needed()
 {
+    bool is_BBL_printer = false;
+    if (m_preset_bundle) {
+       is_BBL_printer = wxGetApp().preset_bundle->is_bbl_vendor();
+    }
+    std::string agent_id = is_BBL_printer ? "bbl" : "orca";
+
     const DynamicPrintConfig& config = m_preset_bundle->printers.get_edited_preset().config;
-
-    if (!config.has("printer_agent")) {
-        return;  // Option not present in older configs
+    if (config.has("printer_agent")) {
+        std::string value = config.option<ConfigOptionString>("printer_agent")->value;
+        if (!value.empty()) {
+            agent_id = value;
+        }
     }
-
-    std::string agent_id = config.option<ConfigOptionString>("printer_agent")->value;
-    std::string print_host_url;
-
-    if (config.has("print_host")) {
-        print_host_url = config.option<ConfigOptionString>("print_host")->value;
-    }
-
     // Switch agent in GUI_App
-    wxGetApp().switch_printer_agent(agent_id, print_host_url);
+    wxGetApp().switch_printer_agent(agent_id);
 }
 
 void Tab::build_preset_description_line(ConfigOptionsGroup* optgroup)

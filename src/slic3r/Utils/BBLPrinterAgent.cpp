@@ -1,7 +1,28 @@
 #include "BBLPrinterAgent.hpp"
 #include "BBLNetworkPlugin.hpp"
+#include "NetworkAgentFactory.hpp"
 
 #include <boost/log/trivial.hpp>
+
+// Self-registration: BBLPrinterAgent registers itself before main()
+// Note: BBLPrinterAgent is always registered. Plugin availability is handled
+// internally by BBLPrinterAgent and BBLNetworkPlugin at runtime.
+namespace {
+inline static const bool s_bbl_agent_registered = []() {
+    auto info = Slic3r::BBLPrinterAgent::get_agent_info();
+    return Slic3r::NetworkAgentFactory::register_printer_agent(
+        info.id,
+        info.name,
+        [](std::shared_ptr<Slic3r::ICloudServiceAgent> cloud_agent,
+           const std::string& log_dir) -> std::shared_ptr<Slic3r::IPrinterAgent> {
+            auto agent = std::make_shared<Slic3r::BBLPrinterAgent>();
+            if (cloud_agent) {
+                agent->set_cloud_agent(cloud_agent);
+            }
+            return agent;
+        });
+}();
+}
 
 namespace Slic3r {
 
@@ -200,6 +221,19 @@ int BBLPrinterAgent::set_user_selected_machine(std::string dev_id)
         return func(agent, dev_id);
     }
     return -1;
+}
+
+// ============================================================================
+// Agent Information
+// ============================================================================
+AgentInfo BBLPrinterAgent::get_agent_info()
+{
+    return AgentInfo{
+        .id = "bbl",
+        .name = "Bambu Lab Printer Agent",
+        .version = "",
+        .description = "Bambu Lab printer agent"
+    };
 }
 
 // ============================================================================

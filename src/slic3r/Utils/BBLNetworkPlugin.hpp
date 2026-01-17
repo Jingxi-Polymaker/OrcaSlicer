@@ -8,6 +8,7 @@
 #include <vector>
 #include <map>
 #include <functional>
+#include <mutex>
 
 #if defined(_MSC_VER) || defined(_WIN32)
 #include <Windows.h>
@@ -172,6 +173,13 @@ public:
      * @return 0 on success
      */
     int unload();
+
+    /**
+     * Destroy the singleton instance.
+     * Safe to call multiple times - does nothing if already destroyed.
+     * Must be called during application shutdown before main() returns.
+     */
+    static void shutdown();
 
     /**
      * Check if DLL is currently loaded.
@@ -373,6 +381,9 @@ public:
     static PrintParams_Legacy as_legacy(PrintParams& param);
 
 private:
+    // Singleton instance pointer (heap-allocated for explicit lifetime control)
+    static BBLNetworkPlugin* s_instance;
+
     BBLNetworkPlugin();
     ~BBLNetworkPlugin();
 

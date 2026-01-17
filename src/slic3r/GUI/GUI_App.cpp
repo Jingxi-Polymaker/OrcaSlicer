@@ -120,6 +120,7 @@
 #include "HintNotification.hpp"
 
 #include "slic3r/Utils/NetworkAgentFactory.hpp"
+#include "slic3r/Utils/BBLNetworkPlugin.hpp"
 #include "slic3r/Utils/bambu_networking.hpp"
 
 //#ifdef WIN32
@@ -2236,6 +2237,8 @@ GUI_App::~GUI_App()
     }
 
     StaticBambuLib::release();
+    BBLNetworkPlugin::shutdown();
+
 
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__<< boost::format(": exit");
 }
@@ -3368,38 +3371,6 @@ __retry:
     }
     }
 
-    // Register available printer agents
-    // NOTE: These registrations should happen before creating the agent
-    // Register Orca Printer Agent
-    NetworkAgentFactory::register_printer_agent("orca", "Orca Native",
-        [](std::shared_ptr<ICloudServiceAgent> cloud_agent, const std::string& log_dir) -> std::shared_ptr<IPrinterAgent> {
-            auto agent = std::make_shared<OrcaPrinterAgent>(log_dir);
-            if (cloud_agent) {
-                agent->set_cloud_agent(cloud_agent);
-            }
-            return agent;
-        });
-
-    // Register BBL Printer Agent (only if BBL plugin is loaded)
-    // Note: BBLNetworkPlugin is a singleton that may or may not be loaded
-    extern class BBLNetworkPlugin* g_bbl_network_plugin;
-    bool bbl_plugin_loaded = (Slic3r::NetworkAgent::is_network_module_loaded() &&
-                               Slic3r::BBLNetworkPlugin::instance().is_loaded());
-
-    if (bbl_plugin_loaded) {
-        NetworkAgentFactory::register_printer_agent("bbl", "Bambu Lab",
-            [](std::shared_ptr<ICloudServiceAgent> cloud_agent, const std::string& log_dir) -> std::shared_ptr<IPrinterAgent> {
-                auto& plugin = Slic3r::BBLNetworkPlugin::instance();
-                if (!plugin.is_loaded() || !plugin.has_agent()) {
-                    return nullptr;
-                }
-                auto agent = std::make_shared<BBLPrinterAgent>();
-                if (cloud_agent) {
-                    agent->set_cloud_agent(cloud_agent);
-                }
-                return agent;
-            });
-    }
 
     if (create_network_agent) {
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", create network agent...");
@@ -3498,8 +3469,10 @@ unsigned GUI_App::get_colour_approx_luma(const wxColour &colour)
         ));
 }
 
-void GUI_App::switch_printer_agent(const std::string& agent_id, const std::string& print_host_url)
+void GUI_App::switch_printer_agent(const std::string& agent_id)
 {
+    // ORCA todo: temporarily disable this feature, we will enable it later.
+    return;
     if (!m_agent) {
         BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": no agent exists";
         return;

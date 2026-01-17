@@ -10,6 +10,19 @@ namespace Slic3r {
 class ICloudServiceAgent;
 
 /**
+ * AgentInfo - Metadata structure for printer agent information.
+ *
+ * Contains identification and descriptive information about a printer agent
+ * implementation, used for discovery and selection purposes.
+ */
+struct AgentInfo {
+    std::string id;         ///< Unique identifier for the agent, e.g. "orca", "bbl"
+    std::string name;       ///< Human-readable agent name, e.g. "Orca", "Bambu Lab"
+    std::string version;    ///< Agent version string, e.g. "1.0.0"
+    std::string description; ///< Brief description of the agent's capabilities, e.g. "Orca printer agent"
+};
+
+/**
  * IPrinterAgent - Interface for printer operations.
  *
  * This interface encapsulates all printer-related functionality:
@@ -27,6 +40,7 @@ class ICloudServiceAgent;
  * Printer agents receive an ICloudServiceAgent instance via set_cloud_agent() to
  * access tokens for cloud-relay operations.
  */
+
 class IPrinterAgent {
 public:
     virtual ~IPrinterAgent() = default;

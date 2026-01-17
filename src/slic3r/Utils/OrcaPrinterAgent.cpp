@@ -1,8 +1,29 @@
 #include "OrcaPrinterAgent.hpp"
+#include "NetworkAgentFactory.hpp"
 
 #include <boost/log/trivial.hpp>
 
+// Self-registration: OrcaPrinterAgent registers itself before main()
+namespace {
+inline static const bool s_orca_agent_registered = []() {
+    auto info = Slic3r::OrcaPrinterAgent::get_agent_info();
+    return Slic3r::NetworkAgentFactory::register_printer_agent(
+        info.id,
+        info.name,
+        [](std::shared_ptr<Slic3r::ICloudServiceAgent> cloud_agent,
+           const std::string& log_dir) -> std::shared_ptr<Slic3r::IPrinterAgent> {
+            auto agent = std::make_shared<Slic3r::OrcaPrinterAgent>(log_dir);
+            if (cloud_agent) {
+                agent->set_cloud_agent(cloud_agent);
+            }
+            return agent;
+        });
+}();
+}
+
 namespace Slic3r {
+
+const std::string OrcaPrinterAgent_VERSION = "0.0.1";
 
 OrcaPrinterAgent::OrcaPrinterAgent(std::string log_dir)
     : log_dir(std::move(log_dir))
@@ -129,6 +150,19 @@ int OrcaPrinterAgent::set_user_selected_machine(std::string dev_id)
     std::lock_guard<std::mutex> lock(state_mutex);
     selected_machine = dev_id;
     return BAMBU_NETWORK_SUCCESS;
+}
+
+// ============================================================================
+// Agent Information
+// ============================================================================
+AgentInfo OrcaPrinterAgent::get_agent_info()
+{
+    return AgentInfo{
+        .id = "orca",
+        .name = "Orca Printer Agent",
+        .version = OrcaPrinterAgent_VERSION,
+        .description = "Orca Printer Communication Protocol Agent"
+    };
 }
 
 // ============================================================================

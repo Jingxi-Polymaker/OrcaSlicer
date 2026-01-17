@@ -5,9 +5,7 @@
 #include "IPrinterAgent.hpp"
 #include "NetworkAgent.hpp"
 #include "OrcaCloudServiceAgent.hpp"
-#include "OrcaPrinterAgent.hpp"
 #include "BBLCloudServiceAgent.hpp"
-#include "BBLPrinterAgent.hpp"
 #include "BBLNetworkPlugin.hpp"
 #include "libslic3r/AppConfig.hpp"
 #include <memory>
@@ -34,19 +32,6 @@ enum class AgentProvider {
     BBL
 };
 
-/**
- * AgentConfiguration - Configuration for per-agent provider selection.
- *
- * Allows mixing providers, e.g., OrcaCloud + BBLPrinter for
- * using Orca login/cloud with BBL printer connectivity.
- *
- * Note: Auth is now part of ICloudServiceAgent, so there's no separate auth_provider.
- */
-struct AgentConfiguration {
-    AgentProvider cloud_provider = AgentProvider::Orca;
-    AgentProvider printer_provider = AgentProvider::Orca;
-};
-
 // Factory function type for creating printer agents
 using PrinterAgentFactory = std::function<std::shared_ptr<IPrinterAgent>(
     std::shared_ptr<ICloudServiceAgent> cloud_agent,
@@ -68,28 +53,20 @@ struct PrinterAgentInfo {
 /**
  * NetworkAgentFactory - Factory for creating network agent instances
  *
- * This factory enables polymorphic creation of network agents based on
- * configuration or runtime decisions. Supports:
- * - NetworkAgent (dynamic library wrapper / facade)
- * - Per-agent creation for mixed Orca/BBL modes
- * - Dynamic printer agent registration and discovery
+ * This factory creates cloud agents and printer agents for the networking subsystem.
+ * The architecture separates cloud services (authentication, project sync) from
+ * printer communication (device discovery, print jobs).
  *
- * Note: Auth functionality is part of ICloudServiceAgent. The cloud service agent
- * handles both authentication and cloud services.
+ * Startup flow:
+ *   1. Cloud agent created at startup via create_agent_from_config()
+ *   2. Printer agents register themselves via static initialization
+ *   3. Printer agent created on-demand when a printer is selected
  *
  * Usage:
- *   // Register a printer agent type at startup
- *   NetworkAgentFactory::register_printer_agent("orca", "Orca Native",
- *       [](std::shared_ptr<ICloudServiceAgent> cloud, const std::string& log_dir) {
- *           auto agent = std::make_shared<OrcaPrinterAgent>(log_dir);
- *           if (cloud) agent->set_cloud_agent(cloud);
- *           return agent;
- *       });
+ *   // At startup - create NetworkAgent with cloud agent only
+ *   auto agent = create_agent_from_config(log_dir, app_config);
  *
- *   // Get list of registered agents for UI
- *   auto agents = NetworkAgentFactory::get_registered_printer_agents();
- *
- *   // Create a printer agent by ID
+ *   // When printer is selected - create printer agent from registry
  *   auto printer = NetworkAgentFactory::create_printer_agent_by_id("orca", cloud, log_dir);
  */
 class NetworkAgentFactory {
@@ -104,8 +81,9 @@ public:
      * @param id Unique identifier for the agent (e.g., "orca", "bbl")
      * @param display_name Human-readable name for UI
      * @param factory Factory function to create the agent
+     * @return true if registration succeeded, false if already registered
      */
-    static void register_printer_agent(const std::string& id,
+    static bool register_printer_agent(const std::string& id,
                                       const std::string& display_name,
                                       PrinterAgentFactory factory);
 
@@ -148,13 +126,12 @@ public:
     static void set_default_printer_agent_id(const std::string& id);
 
     // ========================================================================
-    // Per-Agent Factory Methods
+    // Cloud Agent Factory
     // ========================================================================
 
     /**
-     * Create a cloud service agent based on provider type
-     *
-     * The cloud agent now includes authentication functionality (merged from IAuthAgent).
+     * Create a cloud service agent based on provider type.
+     * Handles authentication, project sync, and other cloud services.
      *
      * @param provider Which implementation to use (Orca or BBL)
      * @param log_dir Directory for log files
@@ -185,48 +162,15 @@ public:
         }
     }
 
-    /**
-     * Create a printer agent based on provider type
-     *
-     * @param provider Which implementation to use (Orca or BBL)
-     * @param cloud_agent Cloud agent for token access (optional for Orca stubs)
-     * @param log_dir Directory for log files
-     * @return Shared pointer to IPrinterAgent implementation
-     */
-    static std::shared_ptr<IPrinterAgent> create_printer_agent(
-        AgentProvider provider,
-        std::shared_ptr<ICloudServiceAgent> cloud_agent,
-        const std::string& log_dir)
-    {
-        switch (provider) {
-            case AgentProvider::Orca: {
-                auto agent = std::make_shared<OrcaPrinterAgent>(log_dir);
-                if (cloud_agent) {
-                    agent->set_cloud_agent(cloud_agent);
-                }
-                return agent;
-            }
-            case AgentProvider::BBL: {
-                auto& plugin = BBLNetworkPlugin::instance();
-                if (!plugin.is_loaded() || !plugin.has_agent()) {
-                    return nullptr;
-                }
-                auto agent = std::make_shared<BBLPrinterAgent>();
-                if (cloud_agent) {
-                    agent->set_cloud_agent(cloud_agent);
-                }
-                return agent;
-            }
-            default:
-                return nullptr;
-        }
-    }
+    // ========================================================================
+    // NetworkAgent Facade Creation
+    // ========================================================================
 
     /**
      * Create a NetworkAgent from pre-created sub-agents
      *
      * @param cloud_agent Cloud service agent (required, includes auth)
-     * @param printer_agent Printer agent (required)
+     * @param printer_agent Printer agent (optional, can be nullptr)
      * @return Unique pointer to NetworkAgent facade
      */
     static std::unique_ptr<NetworkAgent> create_from_agents(
@@ -239,96 +183,6 @@ public:
         );
     }
 
-    /**
-     * Create a fully configured NetworkAgent based on AgentConfiguration
-     *
-     * @param log_dir Directory for log files
-     * @param config Configuration specifying which provider to use for each agent
-     * @return Unique pointer to NetworkAgent with configured sub-agents
-     */
-    static std::unique_ptr<NetworkAgent> create_configured(
-        const std::string& log_dir,
-        const AgentConfiguration& config)
-    {
-        // Create cloud agent first (includes auth, needed by printer agent)
-        auto cloud_agent = create_cloud_agent(config.cloud_provider, log_dir);
-
-        // Create printer agent with cloud agent dependency
-        auto printer_agent = create_printer_agent(config.printer_provider, cloud_agent, log_dir);
-
-        return create_from_agents(cloud_agent, printer_agent);
-    }
-
-    /**
-     * Create a fully configured NetworkAgent with all BBL sub-agents
-     *
-     * Convenience method that creates a NetworkAgent with BBL cloud and printer.
-     * Requires BBL DLL to be loaded via BBLNetworkPlugin::instance().initialize().
-     *
-     * @param log_dir Directory for log files
-     * @return Unique pointer to NetworkAgent with BBL sub-agents, or nullptr if DLL not loaded
-     */
-    static std::unique_ptr<NetworkAgent> create_pure_bbl(const std::string& log_dir) {
-        auto& plugin = BBLNetworkPlugin::instance();
-        if (!plugin.is_loaded()) {
-            return nullptr;
-        }
-
-        AgentConfiguration config;
-        config.cloud_provider = AgentProvider::BBL;
-        config.printer_provider = AgentProvider::BBL;
-        return create_configured(log_dir, config);
-    }
-
-    // ========================================================================
-    // Legacy Factory Methods (backward compatibility)
-    // ========================================================================
-
-    /**
-     * Create a network agent based on type flag
-     *
-     * @param log_dir Directory for log files
-     * @param use_orca_network If true, creates OrcaNetwork; otherwise NetworkAgent
-     * @return Unique pointer to NetworkAgent implementation
-     */
-    static std::unique_ptr<NetworkAgent> create(const std::string& log_dir, bool use_orca_network = false) {
-        if (use_orca_network) {
-            // OrcaNetwork is not compatible with NetworkAgent - use create_network_agent instead
-            return create_network_agent(log_dir);
-        } else {
-            return create_network_agent(log_dir);
-        }
-    }
-
-    /**
-     * Create a NetworkAgent instance
-     *
-     * Note: This requires the bambu_networking library to be loaded first
-     * via NetworkAgent::initialize_network_module()
-     *
-     * @param log_dir Directory for log files
-     * @return Unique pointer to NetworkAgent
-     */
-    static std::unique_ptr<NetworkAgent> create_network_agent(const std::string& log_dir) {
-        return std::make_unique<NetworkAgent>(log_dir);
-    }
-
-    /**
-     * Create a pure Orca agent (using all Orca sub-agents)
-     *
-     * Convenience method that creates a NetworkAgent with Orca cloud and printer.
-     * Equivalent to create_configured with all providers set to Orca.
-     *
-     * @param log_dir Directory for log files
-     * @return Unique pointer to NetworkAgent with Orca sub-agents
-     */
-    static std::unique_ptr<NetworkAgent> create_pure_orca(const std::string& log_dir) {
-        AgentConfiguration config;
-        config.cloud_provider = AgentProvider::Orca;
-        config.printer_provider = AgentProvider::Orca;
-        return create_configured(log_dir, config);
-    }
-
 private:
     // Factory is not instantiable
     NetworkAgentFactory() = delete;
@@ -336,59 +190,70 @@ private:
     NetworkAgentFactory(const NetworkAgentFactory&) = delete;
     NetworkAgentFactory& operator=(const NetworkAgentFactory&) = delete;
 
-    // Registry state
-    static std::mutex s_registry_mutex;
-    static std::map<std::string, PrinterAgentInfo> s_printer_agents;
-    static std::string s_default_agent_id;
+    // Note: Registry state uses function-local statics (Meyer's singleton pattern)
+    // in NetworkAgentFactory.cpp to avoid static initialization order fiasco.
+    // This allows printer agents to self-register during static initialization.
 };
 
 /**
- * Helper function to create agent from AppConfig
+ * Create a NetworkAgent from AppConfig settings (main entry point)
  *
- * Reads the "use_orca_network" setting from app config to determine
- * which implementation to create.
+ * Creates a NetworkAgent with cloud agent only. The printer agent is created
+ * separately when a printer is selected, via create_printer_agent_by_id().
  *
- * Example:
- *   #include "slic3r/GUI/GUI_App.hpp"
- *   auto agent = create_agent_from_config(log_dir, wxGetApp().app_config);
+ * Cloud provider selection:
+ *   - use_orca_cloud=true  → OrcaCloudServiceAgent (default)
+ *   - use_orca_cloud=false → BBLCloudServiceAgent (requires plugin)
  *
  * @param log_dir Directory for log files
  * @param app_config Application configuration object
- * @return Unique pointer to network agent
+ * @return NetworkAgent with cloud agent, or nullptr on failure
  */
 inline std::unique_ptr<NetworkAgent> create_agent_from_config(
     const std::string& log_dir,
     AppConfig* app_config)
 {
-    bool use_orca = true;
+    // Determine cloud provider from config
+    bool use_orca_cloud = false;
     if (app_config) {
-        // Try to read use_orca_network setting
         try {
-            use_orca = app_config->get("use_orca_network") == "true" ||
-                       app_config->get_bool("use_orca_network");
+            use_orca_cloud = app_config->get("use_orca_cloud") == "true" ||
+                            app_config->get_bool("use_orca_cloud");
         } catch (...) {
-            // Setting doesn't exist or error reading - default to true
-            use_orca = true;
+            use_orca_cloud = false;
         }
     }
 
-    if (use_orca) {
-        // Use the new pure Orca agent with sub-agent composition
-        auto agent = NetworkAgentFactory::create_pure_orca(log_dir);
+    // Create cloud agent
+    AgentProvider provider = use_orca_cloud ? AgentProvider::Orca : AgentProvider::BBL;
+    auto cloud_agent = NetworkAgentFactory::create_cloud_agent(provider, log_dir);
 
-        // Configure OrcaCloudServiceAgent URL overrides from AppConfig if applicable
-        if (agent && app_config) {
-            auto cloud_agent = agent->get_cloud_agent();
-            auto* orca_cloud = dynamic_cast<OrcaCloudServiceAgent*>(cloud_agent.get());
-            if (orca_cloud) {
-                orca_cloud->configure_urls(app_config);
-            }
-        }
-
-        return agent;
-    } else {
-        return NetworkAgentFactory::create_network_agent(log_dir);
+    // Fall back to Orca if BBL plugin not available
+    if (!cloud_agent && provider == AgentProvider::BBL) {
+        BOOST_LOG_TRIVIAL(warning) << "BBL plugin not loaded, falling back to Orca cloud agent";
+        cloud_agent = NetworkAgentFactory::create_cloud_agent(AgentProvider::Orca, log_dir);
     }
+
+    if (!cloud_agent) {
+        BOOST_LOG_TRIVIAL(error) << "Failed to create cloud agent";
+        return nullptr;
+    }
+
+    auto bbl_printer_agent = NetworkAgentFactory::create_printer_agent_by_id("bbl", cloud_agent, log_dir);
+    // Create NetworkAgent with cloud agent only (printer agent added later)
+    auto agent = NetworkAgentFactory::create_from_agents(std::move(cloud_agent), bbl_printer_agent);
+
+    // Configure URL overrides for Orca cloud
+    if (agent && app_config && use_orca_cloud) {
+        auto* orca_cloud = dynamic_cast<OrcaCloudServiceAgent*>(
+            agent->get_cloud_agent().get());
+        if (orca_cloud) {
+            orca_cloud->configure_urls(app_config);
+        }
+    }
+
+    BOOST_LOG_TRIVIAL(info) << "Created NetworkAgent with cloud agent";
+    return agent;
 }
 
 } // namespace Slic3r

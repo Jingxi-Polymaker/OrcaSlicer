@@ -342,7 +342,7 @@ public:
     NetworkAgent* getAgent() { return m_agent; }
 
     // Dynamic printer agent switching
-    void switch_printer_agent(const std::string& agent_id, const std::string& print_host_url = "");
+    void switch_printer_agent(const std::string& agent_id);
 
     FilamentColorCodeQuery* get_filament_color_code_query();
     bool is_editor() const { return m_app_mode == EAppMode::Editor; }

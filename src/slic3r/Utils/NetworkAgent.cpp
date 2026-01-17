@@ -131,9 +131,10 @@ NetworkAgent::NetworkAgent(std::shared_ptr<ICloudServiceAgent> cloud_agent,
     : m_cloud_agent(std::move(cloud_agent))
     , m_printer_agent(std::move(printer_agent))
 {
-    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", sub-agent composition mode: cloud=%1%, printer=%2%")
+    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(
+        ", sub-agent composition mode: cloud=%1%, printer=%2%")
         % (m_cloud_agent ? "yes" : "no")
-        % (m_printer_agent ? "yes" : "no");
+        % (m_printer_agent ? "yes" : "no (will be set when printer selected)");
 }
 
 NetworkAgent::~NetworkAgent()

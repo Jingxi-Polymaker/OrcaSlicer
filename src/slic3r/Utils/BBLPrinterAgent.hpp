@@ -51,6 +51,13 @@ public:
     std::string get_user_selected_machine() override;
     int set_user_selected_machine(std::string dev_id) override;
 
+    /**
+     * Get agent information.
+     *
+     * @return AgentInfo struct containing agent identification and descriptive information
+     */
+     static AgentInfo get_agent_info();
+
     // Print Job Operations
     int start_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) override;
     int start_local_print_with_record(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn) override;

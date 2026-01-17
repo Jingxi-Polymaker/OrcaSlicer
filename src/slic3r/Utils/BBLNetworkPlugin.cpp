@@ -20,10 +20,25 @@ namespace Slic3r {
 // Singleton Implementation
 // ============================================================================
 
+// Static pointer initialization (null by default, created on first access)
+BBLNetworkPlugin* BBLNetworkPlugin::s_instance = nullptr;
+
 BBLNetworkPlugin& BBLNetworkPlugin::instance()
 {
-    static BBLNetworkPlugin s_instance;
-    return s_instance;
+    static std::once_flag flag;
+    std::call_once(flag, [] {
+        s_instance = new BBLNetworkPlugin();
+    });
+    return *s_instance;
+}
+
+void BBLNetworkPlugin::shutdown()
+{
+    // Note: Do not call instance() after shutdown() - the singleton is destroyed.
+    if (s_instance) {
+        delete s_instance;
+        s_instance = nullptr;
+    }
 }
 
 BBLNetworkPlugin::BBLNetworkPlugin() = default;
