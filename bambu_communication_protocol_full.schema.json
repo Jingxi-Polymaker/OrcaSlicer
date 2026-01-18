@@ -1,0 +1,697 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bambu_communication_protocol_full.schema.json",
+  "title": "Bambu Printer LAN Protocol (Observed + Code-Supported)",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/PushingPushall" },
+    { "$ref": "#/$defs/PushingStartStop" },
+    { "$ref": "#/$defs/InfoGetVersion" },
+    { "$ref": "#/$defs/PrintPushStatus" },
+    { "$ref": "#/$defs/PrintExtrusionCaliGet" },
+    { "$ref": "#/$defs/PrintExtrusionCaliSel" },
+    { "$ref": "#/$defs/PrintSetNozzleTemp" },
+    { "$ref": "#/$defs/PrintSetBedTemp" },
+    { "$ref": "#/$defs/PrintXyzCtrl" },
+    { "$ref": "#/$defs/PrintBackToCenter" },
+    { "$ref": "#/$defs/PrintAmsFilamentSetting" },
+    { "$ref": "#/$defs/PrintAmsUserSetting" },
+    { "$ref": "#/$defs/PrintPrintOption" },
+    { "$ref": "#/$defs/PrintSelectExtruder" },
+    { "$ref": "#/$defs/PrintSetFan" },
+    { "$ref": "#/$defs/PrintSetAirduct" },
+    { "$ref": "#/$defs/PrintGcodeLine" },
+    { "$ref": "#/$defs/SystemLedCtrl" },
+    { "$ref": "#/$defs/SystemGetAccessCode" },
+    { "$ref": "#/$defs/SystemSetDoorStat" },
+    { "$ref": "#/$defs/SystemPrintCacheSet" },
+    { "$ref": "#/$defs/SystemBind" },
+    { "$ref": "#/$defs/SystemConnect" },
+    { "$ref": "#/$defs/SystemDisconnect" },
+    { "$ref": "#/$defs/EventClient" }
+  ],
+  "$defs": {
+    "PushingPushall": {
+      "title": "pushing.pushall",
+      "type": "object",
+      "required": ["pushing"],
+      "properties": {
+        "pushing": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "pushall" },
+            "sequence_id": { "type": "string" },
+            "version": { "type": "integer" },
+            "push_target": { "type": "integer" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PushingStartStop": {
+      "title": "pushing.start/stop",
+      "type": "object",
+      "required": ["pushing"],
+      "properties": {
+        "pushing": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "enum": ["start", "stop"] },
+            "sequence_id": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "InfoGetVersion": {
+      "title": "info.get_version",
+      "type": "object",
+      "required": ["info"],
+      "properties": {
+        "info": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "get_version" },
+            "sequence_id": { "type": "string" },
+            "module": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/VersionModule" }
+            },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintPushStatus": {
+      "title": "print.push_status",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command"],
+          "properties": {
+            "command": { "const": "push_status" },
+            "sequence_id": { "type": "string" },
+            "msg": { "type": "integer" },
+            "device": { "type": "object", "additionalProperties": true },
+            "ams": { "$ref": "#/$defs/AmsBlock" },
+            "vir_slot": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/AmsTray" }
+            },
+            "vt_tray": { "type": "object", "additionalProperties": true },
+            "xcam": { "type": "object", "additionalProperties": true },
+            "xcam_status": { "type": ["string", "integer"] },
+            "hms": { "type": "array", "items": { "type": "object" } },
+            "lights_report": { "type": "array", "items": { "type": "object" } },
+            "ipcam": { "type": "object", "additionalProperties": true }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintExtrusionCaliGet": {
+      "title": "print.extrusion_cali_get",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "extrusion_cali_get" },
+            "sequence_id": { "type": "string" },
+            "filament_id": { "type": "string" },
+            "nozzle_diameter": { "type": "string" },
+            "filaments": { "type": "array" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintExtrusionCaliSel": {
+      "title": "print.extrusion_cali_sel",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "extrusion_cali_sel" },
+            "sequence_id": { "type": "string" },
+            "cali_idx": { "type": "integer" },
+            "nozzle_diameter": { "type": "string" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintSetNozzleTemp": {
+      "title": "print.set_nozzle_temp",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id", "extruder_index"],
+          "properties": {
+            "command": { "const": "set_nozzle_temp" },
+            "sequence_id": { "type": "string" },
+            "extruder_index": { "type": "integer" },
+            "target_temp": { "type": "integer" },
+            "current_temp": { "type": "number" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintSetBedTemp": {
+      "title": "print.set_bed_temp",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "set_bed_temp" },
+            "sequence_id": { "type": "string" },
+            "temp": { "type": "number" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintXyzCtrl": {
+      "title": "print.xyz_ctrl",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "xyz_ctrl" },
+            "sequence_id": { "type": "string" },
+            "axis": { "type": "string" },
+            "dir": { "type": "integer" },
+            "mode": { "type": "integer" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintBackToCenter": {
+      "title": "print.back_to_center",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "back_to_center" },
+            "sequence_id": { "type": "string" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintAmsFilamentSetting": {
+      "title": "print.ams_filament_setting",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id", "ams_id", "slot_id", "tray_id"],
+          "properties": {
+            "command": { "const": "ams_filament_setting" },
+            "sequence_id": { "type": "string" },
+            "ams_id": { "type": "integer" },
+            "slot_id": { "type": "integer" },
+            "tray_id": { "type": "integer" },
+            "tray_info_idx": { "type": "string" },
+            "setting_id": { "type": "string" },
+            "tray_type": { "type": "string" },
+            "tray_color": { "type": "string" },
+            "nozzle_temp_min": { "type": "integer" },
+            "nozzle_temp_max": { "type": "integer" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintAmsUserSetting": {
+      "title": "print.ams_user_setting",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "ams_user_setting" },
+            "sequence_id": { "type": "string" },
+            "ams_id": { "type": "integer" },
+            "calibrate_remain_flag": { "type": "boolean" },
+            "startup_read_option": { "type": "boolean" },
+            "tray_read_option": { "type": "boolean" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintPrintOption": {
+      "title": "print.print_option",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "print_option" },
+            "sequence_id": { "type": "string" },
+            "auto_switch_filament": { "type": "boolean" },
+            "air_print_detect": { "type": "boolean" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintSelectExtruder": {
+      "title": "print.select_extruder",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id", "extruder_index"],
+          "properties": {
+            "command": { "const": "select_extruder" },
+            "sequence_id": { "type": "string" },
+            "extruder_index": { "type": "integer" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintSetFan": {
+      "title": "print.set_fan",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id", "fan_index"],
+          "properties": {
+            "command": { "const": "set_fan" },
+            "sequence_id": { "type": "string" },
+            "fan_index": { "type": "integer" },
+            "speed": { "type": "integer" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintSetAirduct": {
+      "title": "print.set_airduct",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "set_airduct" },
+            "sequence_id": { "type": "string" },
+            "modeId": { "type": "integer" },
+            "submode": { "type": "integer" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "PrintGcodeLine": {
+      "title": "print.gcode_line",
+      "type": "object",
+      "required": ["print"],
+      "properties": {
+        "print": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "gcode_line" },
+            "sequence_id": { "type": "string" },
+            "return_code": { "type": "string" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "SystemLedCtrl": {
+      "title": "system.ledctrl",
+      "type": "object",
+      "required": ["system"],
+      "properties": {
+        "system": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "ledctrl" },
+            "sequence_id": { "type": "string" },
+            "led_node": { "type": "string" },
+            "led_mode": { "type": "string" },
+            "led_time": { "type": "integer" },
+            "led_percent": { "type": "integer" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "SystemGetAccessCode": {
+      "title": "system.get_access_code",
+      "type": "object",
+      "required": ["system"],
+      "properties": {
+        "system": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "get_access_code" },
+            "sequence_id": { "type": "string" },
+            "access_code": { "type": "string" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "SystemSetDoorStat": {
+      "title": "system.set_door_stat",
+      "type": "object",
+      "required": ["system"],
+      "properties": {
+        "system": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "set_door_stat" },
+            "sequence_id": { "type": "string" },
+            "config": { "type": ["integer", "boolean"] },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "SystemPrintCacheSet": {
+      "title": "system.print_cache_set",
+      "type": "object",
+      "required": ["system"],
+      "properties": {
+        "system": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "print_cache_set" },
+            "sequence_id": { "type": "string" },
+            "config": { "type": ["boolean", "integer"] },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "SystemBind": {
+      "title": "system.bind",
+      "type": "object",
+      "required": ["system"],
+      "properties": {
+        "system": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "bind" },
+            "sequence_id": { "type": "string" },
+            "access_code": { "type": "string" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "SystemConnect": {
+      "title": "system.connect",
+      "type": "object",
+      "required": ["system"],
+      "properties": {
+        "system": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "connect" },
+            "sequence_id": { "type": "string" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "SystemDisconnect": {
+      "title": "system.disconnect",
+      "type": "object",
+      "required": ["system"],
+      "properties": {
+        "system": {
+          "type": "object",
+          "required": ["command", "sequence_id"],
+          "properties": {
+            "command": { "const": "disconnect" },
+            "sequence_id": { "type": "string" },
+            "result": { "type": "string" },
+            "reason": { "type": "string" },
+            "errno": { "type": "integer" },
+            "is_from_mqtt": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "EventClient": {
+      "title": "event.client.connected/disconnected",
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": {
+          "type": "object",
+          "required": ["event"],
+          "properties": {
+            "event": { "enum": ["client.connected", "client.disconnected"] }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "VersionModule": {
+      "type": "object",
+      "properties": {
+        "flag": { "type": "integer" },
+        "hw_ver": { "type": "string" },
+        "loader_ver": { "type": "string" },
+        "name": { "type": "string" },
+        "product_name": { "type": "string" },
+        "sn": { "type": "string" },
+        "sw_ver": { "type": "string" },
+        "visible": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "AmsBlock": {
+      "type": "object",
+      "required": ["ams"],
+      "properties": {
+        "ams": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AmsUnit" }
+        },
+        "ams_exist_bits": { "type": "string" },
+        "ams_exist_bits_raw": { "type": "string" },
+        "tray_exist_bits": { "type": "string" },
+        "tray_is_bbl_bits": { "type": "string" },
+        "tray_read_done_bits": { "type": "string" },
+        "tray_reading_bits": { "type": "string" },
+        "tray_now": { "type": "string" },
+        "tray_pre": { "type": "string" },
+        "tray_tar": { "type": "string" },
+        "cali_id": { "type": "integer" },
+        "cali_stat": { "type": "integer" },
+        "insert_flag": { "type": "boolean" },
+        "power_on_flag": { "type": "boolean" },
+        "version": { "type": "integer" },
+        "unbind_ams_stat": { "type": "integer" }
+      },
+      "additionalProperties": true
+    },
+    "AmsUnit": {
+      "type": "object",
+      "required": ["id", "tray"],
+      "properties": {
+        "id": { "type": "string" },
+        "info": { "type": "string" },
+        "dry_time": { "type": "integer" },
+        "humidity": { "type": "string" },
+        "humidity_raw": { "type": "string" },
+        "temp": { "type": "string" },
+        "tray": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AmsTray" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "AmsTray": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "state": { "type": "integer" },
+        "tag_uid": { "type": "string" },
+        "tray_info_idx": { "type": "string" },
+        "tray_type": { "type": "string" },
+        "tray_color": { "type": "string" },
+        "tray_sub_brands": { "type": "string" },
+        "tray_weight": { "type": "string" },
+        "tray_diameter": { "type": "string" },
+        "tray_temp": { "type": "string" },
+        "tray_time": { "type": "string" },
+        "bed_temp_type": { "type": "string" },
+        "bed_temp": { "type": "string" },
+        "nozzle_temp_min": { "type": "string" },
+        "nozzle_temp_max": { "type": "string" },
+        "tray_uuid": { "type": "string" },
+        "xcam_info": { "type": "string" },
+        "ctype": { "type": "integer" },
+        "cols": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "remain": { "type": "integer" },
+        "drying_temp": { "type": "string" },
+        "drying_time": { "type": "string" },
+        "total_len": { "type": "integer" },
+        "cali_idx": { "type": "integer" },
+        "setting_id": { "type": "string" },
+        "k": { "type": "number" },
+        "n": { "type": "number" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
