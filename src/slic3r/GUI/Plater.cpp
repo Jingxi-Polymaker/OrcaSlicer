@@ -2371,7 +2371,8 @@ void Sidebar::update_all_preset_comboboxes()
     } else {
         //p->btn_connect_printer->Show();
         p->m_printer_connect->Show();
-        p->m_bpButton_ams_filament->Hide();
+        p->m_bpButton_ams_filament->Show();
+        // p->m_bpButton_ams_filament->Hide();
         auto print_btn_type = MainFrame::PrintSelectType::eExportGcode;
         wxString url = cfg.opt_string("print_host_webui").empty() ? cfg.opt_string("print_host") : cfg.opt_string("print_host_webui");
         wxString apikey;

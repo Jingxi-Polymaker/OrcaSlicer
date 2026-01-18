@@ -2136,11 +2136,14 @@ void Tab::on_presets_changed()
 
 void Tab::update_printer_agent_if_needed()
 {
-    bool is_BBL_printer = false;
+    std::string agent_id = "orca";
     if (m_preset_bundle) {
-       is_BBL_printer = wxGetApp().preset_bundle->is_bbl_vendor();
+        if (wxGetApp().preset_bundle->is_bbl_vendor()) {
+            agent_id = "bbl";
+        } else if (wxGetApp().preset_bundle->is_qidi_vendor()) {
+            agent_id = "qidi";
+        }
     }
-    std::string agent_id = is_BBL_printer ? "bbl" : "orca";
 
     const DynamicPrintConfig& config = m_preset_bundle->printers.get_edited_preset().config;
     if (config.has("printer_agent")) {
