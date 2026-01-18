@@ -3150,6 +3150,38 @@ void Sidebar::on_bed_type_change(BedType bed_type)
     if (p->combo_printer_bed != nullptr) p->combo_printer_bed->SetSelection(sel_idx);
 }
 
+/**
+ * Build a map of filament configurations from the connected printer's AMS (Automatic Material System).
+ *
+ * Data Flow Architecture:
+ * =======================
+ * This function reads pre-populated state from MachineObject - it does NOT directly call
+ * NetworkAgent APIs. The data pipeline is:
+ *
+ *   Printer Device (MQTT/LAN messages)
+ *       ↓
+ *   NetworkAgent (receives JSON, triggers OnMessageFn callbacks)
+ *       ↓
+ *   MachineObject::parse_json() (updates device state)
+ *       ├── vt_slot (std::vector<DevAmsTray>) - virtual tray data for external filament
+ *       └── DevFilaSystem → DevAms → DevAmsTray - AMS unit hierarchy
+ *       ↓
+ *   build_filament_ams_list() [THIS FUNCTION] - aggregates into DynamicPrintConfig maps
+ *
+ * Data Sources:
+ * - obj->vt_slot: Virtual trays for external/manual filament loading (when ams_support_virtual_tray is true)
+ * - obj->GetFilaSystem()->GetAmsList(): Map of AMS units, each containing multiple DevAmsTray slots
+ *
+ * Return Value:
+ * - Map key encoding:
+ *   - Virtual trays: 0x10000 + vt_tray.id (first/main extruder), or just vt_tray.id (secondary)
+ *   - AMS trays: 0x10000 + (ams_id * 4 + slot_id) (main extruder), or (ams_id * 4 + slot_id) (secondary)
+ *   - The 0x10000 flag indicates the main/right extruder
+ * - Map value: DynamicPrintConfig with filament properties (id, type, color, etc.)
+ *
+ * @param obj The MachineObject representing the connected printer (nullable)
+ * @return Map of tray indices to filament configurations
+ */
 std::map<int, DynamicPrintConfig> Sidebar::build_filament_ams_list(MachineObject* obj)
 {
     std::map<int, DynamicPrintConfig> filament_ams_list;

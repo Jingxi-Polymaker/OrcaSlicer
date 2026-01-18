@@ -122,6 +122,7 @@
 #include "slic3r/Utils/NetworkAgentFactory.hpp"
 #include "slic3r/Utils/BBLNetworkPlugin.hpp"
 #include "slic3r/Utils/bambu_networking.hpp"
+#include "slic3r/Utils/PrinterCommLogger.hpp"
 
 //#ifdef WIN32
 //#include "BaseException.h"
@@ -2425,6 +2426,9 @@ void GUI_App::init_app_config()
 #else
     set_log_path_and_level(log_filename, 3);
 #endif
+
+    // Initialize printer communication logger
+    PrinterCommLogger::instance().initialize(Slic3r::data_dir() + "/log");
 
     BOOST_LOG_TRIVIAL(info) << boost::format("gui mode, Current OrcaSlicer Version %1% build %2%") % SoftFever_VERSION % GIT_COMMIT_HASH;
 

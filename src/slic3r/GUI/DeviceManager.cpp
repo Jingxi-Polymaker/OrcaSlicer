@@ -3,6 +3,7 @@
 #include "libslic3r/Time.hpp"
 #include "libslic3r/Thread.hpp"
 #include "slic3r/Utils/NetworkAgent.hpp"
+#include "slic3r/Utils/PrinterCommLogger.hpp"
 #include "GuiColor.hpp"
 
 #include "GUI_App.hpp"
@@ -2470,6 +2471,11 @@ bool MachineObject::is_camera_busy_off()
 
 int MachineObject::publish_json(const json& json_item, int qos, int flag)
 {
+    PrinterCommLogger::instance().log_send(
+        get_dev_id(),
+        is_lan_mode_printer() ? "LAN" : "Cloud",
+        json_item);
+
     int rtn = 0;
     if (is_lan_mode_printer()) {
         rtn = local_publish_json(json_item.dump(), qos, flag);
@@ -2577,6 +2583,13 @@ int MachineObject::parse_json(std::string tunnel, std::string payload, bool key_
         if (j_pre.empty()) {
             return 0;
         }
+
+        // Log incoming message
+        PrinterCommLogger::instance().log_recv(
+            get_dev_id(),
+            tunnel,
+            j_pre);
+
         if (j_pre.contains("print")) {
             if (m_active_state == NotActive) m_active_state = Active;
             if (j_pre["print"].contains("command")) {
