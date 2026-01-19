@@ -3381,6 +3381,9 @@ __retry:
         //std::string data_dir = wxStandardPaths::Get().GetUserDataDir().ToUTF8().data();
         std::string data_directory = data_dir();
 
+        // Register all printer agents before creating the network agent
+        Slic3r::NetworkAgentFactory::register_all_agents();
+
         // m_agent = new Slic3r::NetworkAgent(data_directory);
         std::unique_ptr<Slic3r::NetworkAgent> agent_ptr = Slic3r::create_agent_from_config(data_directory, app_config);
         m_agent = agent_ptr.release();

@@ -151,53 +151,53 @@ void PhysicalPrinterDialog::build_printhost_settings(ConfigOptionsGroup* m_optgr
 
     m_optgroup->append_single_option_line("host_type");
 
-    // Build printer agent dropdown from registry
-    auto agents = NetworkAgentFactory::get_registered_printer_agents();
+    // Build printer agent dropdown from registry (only if network agent is available)
+    if (wxGetApp().getAgent() != nullptr) {
+        auto agents = NetworkAgentFactory::get_registered_printer_agents();
 
-    if (!agents.empty()) {
-        // Create a fake enum option to force a Choice widget instead of TextCtrl
-        // (printer_agent is coString in config, but we need a dropdown)
-        ConfigOptionDef def;
-        def.type = coEnum;
-        def.width = Field::def_width();
-        def.label = L("Printer Agent");
-        def.tooltip = L("Select the network agent implementation for printer communication. "
-                          "Available agents are registered at startup.");
-        def.mode = comAdvanced;
+        if (!agents.empty()) {
+            // Create a fake enum option to force a Choice widget instead of TextCtrl
+            // (printer_agent is coString in config, but we need a dropdown)
+            ConfigOptionDef def;
+            def.type    = coEnum;
+            def.width   = Field::def_width();
+            def.label   = L("Printer Agent");
+            def.tooltip = L("Select the network agent implementation for printer communication. "
+                            "Available agents are registered at startup.");
+            def.mode    = comAdvanced;
 
-        // Populate enum values and labels from registered agents
-        for (const auto& agent : agents) {
-            def.enum_values.push_back(agent.id);
-            def.enum_labels.push_back(agent.display_name);
+            // Populate enum values and labels from registered agents
+            for (const auto& agent : agents) {
+                def.enum_values.push_back(agent.id);
+                def.enum_labels.push_back(agent.display_name);
+            }
+
+            // Set initial selection based on current config value or default
+            const std::string current_agent  = m_config->opt_string("printer_agent");
+            std::string       selected_agent = current_agent;
+
+            if (selected_agent.empty()) {
+                selected_agent = NetworkAgentFactory::get_default_printer_agent_id();
+            }
+
+            // Verify selected agent is valid
+            auto it = std::find_if(agents.begin(), agents.end(), [&selected_agent](const auto& a) { return a.id == selected_agent; });
+            if (it == agents.end()) {
+                selected_agent = NetworkAgentFactory::get_default_printer_agent_id();
+            }
+
+            // Set default value for the enum (using the index)
+            auto def_it = std::find_if(agents.begin(), agents.end(), [&selected_agent](const auto& a) { return a.id == selected_agent; });
+            if (def_it != agents.end()) {
+                size_t default_idx = std::distance(agents.begin(), def_it);
+                def.set_default_value(new ConfigOptionInt(static_cast<int>(default_idx)));
+            }
+
+            // Create and append the option line
+            auto agent_option = Option(def, "printer_agent");
+            Line agent_line   = m_optgroup->create_single_option_line(agent_option);
+            m_optgroup->append_line(agent_line);
         }
-
-        // Set initial selection based on current config value or default
-        const std::string current_agent = m_config->opt_string("printer_agent");
-        std::string selected_agent = current_agent;
-
-        if (selected_agent.empty()) {
-            selected_agent = NetworkAgentFactory::get_default_printer_agent_id();
-        }
-
-        // Verify selected agent is valid
-        auto it = std::find_if(agents.begin(), agents.end(),
-                              [&selected_agent](const auto& a) { return a.id == selected_agent; });
-        if (it == agents.end()) {
-            selected_agent = NetworkAgentFactory::get_default_printer_agent_id();
-        }
-
-        // Set default value for the enum (using the index)
-        auto def_it = std::find_if(agents.begin(), agents.end(),
-                                   [&selected_agent](const auto& a) { return a.id == selected_agent; });
-        if (def_it != agents.end()) {
-            size_t default_idx = std::distance(agents.begin(), def_it);
-            def.set_default_value(new ConfigOptionInt(static_cast<int>(default_idx)));
-        }
-
-        // Create and append the option line
-        auto agent_option = Option(def, "printer_agent");
-        Line agent_line = m_optgroup->create_single_option_line(agent_option);
-        m_optgroup->append_line(agent_line);
     }
 
     auto create_sizer_with_btn = [](wxWindow* parent, Button** btn, const std::string& icon_name, const wxString& label) {

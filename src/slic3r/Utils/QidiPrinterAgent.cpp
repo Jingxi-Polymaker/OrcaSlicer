@@ -1,5 +1,4 @@
 #include "QidiPrinterAgent.hpp"
-#include "NetworkAgentFactory.hpp"
 #include "Http.hpp"
 
 #include "nlohmann/json.hpp"
@@ -10,20 +9,6 @@
 #include <sstream>
 
 namespace {
-inline static const bool s_qidi_agent_registered = []() {
-    auto info = Slic3r::QidiPrinterAgent::get_agent_info_static();
-    return Slic3r::NetworkAgentFactory::register_printer_agent(
-        info.id,
-        info.name,
-        [](std::shared_ptr<Slic3r::ICloudServiceAgent> cloud_agent,
-           const std::string& log_dir) -> std::shared_ptr<Slic3r::IPrinterAgent> {
-            auto agent = std::make_shared<Slic3r::QidiPrinterAgent>(log_dir);
-            if (cloud_agent) {
-                agent->set_cloud_agent(cloud_agent);
-            }
-            return agent;
-        });
-}();
 
 std::string to_hex_string(uint64_t value)
 {
@@ -75,8 +60,7 @@ namespace Slic3r {
 
 const std::string QidiPrinterAgent_VERSION = "0.0.1";
 
-QidiPrinterAgent::QidiPrinterAgent(std::string log_dir)
-    : OrcaPrinterAgent(std::move(log_dir))
+QidiPrinterAgent::QidiPrinterAgent(std::string log_dir) : OrcaPrinterAgent(std::move(log_dir))
 {
     BOOST_LOG_TRIVIAL(info) << "QidiPrinterAgent: Constructor";
 }
@@ -85,33 +69,28 @@ QidiPrinterAgent::~QidiPrinterAgent() = default;
 
 AgentInfo QidiPrinterAgent::get_agent_info_static()
 {
-    return AgentInfo{
-        .id = "qidi",
-        .name = "Qidi Printer Agent",
-        .version = QidiPrinterAgent_VERSION,
-        .description = "Qidi printer agent"
-    };
+    return AgentInfo{.id = "qidi", .name = "Qidi Printer Agent", .version = QidiPrinterAgent_VERSION, .description = "Qidi printer agent"};
 }
 
 int QidiPrinterAgent::send_message(std::string dev_id, std::string json_str, int qos, int flag)
 {
-    (void)qos;
-    (void)flag;
+    (void) qos;
+    (void) flag;
     return handle_request(dev_id, json_str);
 }
 
 int QidiPrinterAgent::send_message_to_printer(std::string dev_id, std::string json_str, int qos, int flag)
 {
-    (void)qos;
-    (void)flag;
+    (void) qos;
+    (void) flag;
     return handle_request(dev_id, json_str);
 }
 
 int QidiPrinterAgent::connect_printer(std::string dev_id, std::string dev_ip, std::string username, std::string password, bool use_ssl)
 {
-    (void)username;
-    (void)password;
-    (void)use_ssl;
+    (void) username;
+    (void) password;
+    (void) use_ssl;
     store_host(dev_id, dev_ip);
     BOOST_LOG_TRIVIAL(info) << "QidiPrinterAgent: connect_printer - dev_id=" << dev_id << ", dev_ip=" << dev_ip;
     return BAMBU_NETWORK_SUCCESS;
@@ -165,8 +144,8 @@ int QidiPrinterAgent::sync_filament_list(const std::string& dev_id)
     }
 
     std::vector<QidiSlotInfo> slots;
-    int box_count = 0;
-    std::string error;
+    int                       box_count = 0;
+    std::string               error;
     if (!fetch_slot_info(host, slots, box_count, error)) {
         BOOST_LOG_TRIVIAL(error) << "QidiPrinterAgent: Failed to fetch slot info: " << error;
         return BAMBU_NETWORK_ERR_CONNECTION_TO_PRINTER_FAILED;
@@ -191,10 +170,10 @@ int QidiPrinterAgent::sync_filament_list(const std::string& dev_id)
 
     nlohmann::json payload;
     payload["print"]["command"] = "push_status";
-    payload["print"]["msg"] = 0;
+    payload["print"]["msg"]     = 0;
 
     nlohmann::json ams;
-    ams["ams_exist_bits"] = to_hex_string(ams_exist_bits);
+    ams["ams_exist_bits"]  = to_hex_string(ams_exist_bits);
     ams["tray_exist_bits"] = to_hex_string(tray_exist_bits);
 
     nlohmann::json ams_units = nlohmann::json::array();
@@ -204,8 +183,8 @@ int QidiPrinterAgent::sync_filament_list(const std::string& dev_id)
 
         nlohmann::json trays = nlohmann::json::array();
         for (int slot_id = 0; slot_id < 4; ++slot_id) {
-            const int slot_index = ams_id * 4 + slot_id;
-            const QidiSlotInfo slot = slot_index < static_cast<int>(slots.size()) ? slots[slot_index] : QidiSlotInfo{};
+            const int          slot_index = ams_id * 4 + slot_id;
+            const QidiSlotInfo slot       = slot_index < static_cast<int>(slots.size()) ? slots[slot_index] : QidiSlotInfo{};
 
             std::string tray_color = "00000000";
             std::string tray_type;
@@ -213,18 +192,18 @@ int QidiPrinterAgent::sync_filament_list(const std::string& dev_id)
 
             if (slot.filament_exists) {
                 std::string filament_type = "PLA";
-                auto filament_it = dict.filaments.find(slot.filament_type);
+                auto        filament_it   = dict.filaments.find(slot.filament_type);
                 if (filament_it != dict.filaments.end()) {
                     filament_type = filament_it->second;
                 }
-                tray_type = normalize_filament_type(filament_type);
+                tray_type     = normalize_filament_type(filament_type);
                 tray_info_idx = map_filament_type_to_setting_id(tray_type);
                 if (tray_info_idx.empty()) {
                     tray_info_idx = "unknown";
                 }
 
-                std::string color = "#FFFFFF";
-                auto color_it = dict.colors.find(slot.color_index);
+                std::string color    = "#FFFFFF";
+                auto        color_it = dict.colors.find(slot.color_index);
                 if (color_it != dict.colors.end()) {
                     color = color_it->second;
                 }
@@ -232,13 +211,13 @@ int QidiPrinterAgent::sync_filament_list(const std::string& dev_id)
             }
 
             nlohmann::json tray;
-            tray["id"] = std::to_string(slot_id);
-            tray["tag_uid"] = "0000000000000000";
-            tray["tray_color"] = tray_color;
-            tray["ctype"] = 0;
-            tray["cols"] = nlohmann::json::array({tray_color});
+            tray["id"]            = std::to_string(slot_id);
+            tray["tag_uid"]       = "0000000000000000";
+            tray["tray_color"]    = tray_color;
+            tray["ctype"]         = 0;
+            tray["cols"]          = nlohmann::json::array({tray_color});
             tray["tray_info_idx"] = slot.filament_exists ? tray_info_idx : "";
-            tray["tray_type"] = slot.filament_exists ? tray_type : "";
+            tray["tray_type"]     = slot.filament_exists ? tray_type : "";
             trays.push_back(tray);
         }
 
@@ -246,7 +225,7 @@ int QidiPrinterAgent::sync_filament_list(const std::string& dev_id)
         ams_units.push_back(ams_unit);
     }
 
-    ams["ams"] = ams_units;
+    ams["ams"]              = ams_units;
     payload["print"]["ams"] = ams;
 
     dispatch_message(dev_id, payload.dump());
@@ -256,7 +235,7 @@ int QidiPrinterAgent::sync_filament_list(const std::string& dev_id)
 std::string QidiPrinterAgent::resolve_host(const std::string& dev_id) const
 {
     std::lock_guard<std::mutex> lock(state_mutex);
-    auto it = host_by_device.find(dev_id);
+    auto                        it = host_by_device.find(dev_id);
     if (it != host_by_device.end()) {
         return it->second;
     }
@@ -272,10 +251,7 @@ void QidiPrinterAgent::store_host(const std::string& dev_id, const std::string& 
     host_by_device[dev_id] = host;
 }
 
-bool QidiPrinterAgent::fetch_slot_info(const std::string& host,
-                                       std::vector<QidiSlotInfo>& slots,
-                                       int& box_count,
-                                       std::string& error) const
+bool QidiPrinterAgent::fetch_slot_info(const std::string& host, std::vector<QidiSlotInfo>& slots, int& box_count, std::string& error) const
 {
     std::string url = "http://" + host + "/printer/objects/query?save_variables=variables";
     for (int i = 0; i < 16; ++i) {
@@ -283,7 +259,7 @@ bool QidiPrinterAgent::fetch_slot_info(const std::string& host,
     }
 
     std::string response_body;
-    bool success = false;
+    bool        success = false;
     std::string http_error;
 
     auto http = Http::get(url);
@@ -292,7 +268,7 @@ bool QidiPrinterAgent::fetch_slot_info(const std::string& host,
         .on_complete([&](std::string body, unsigned status) {
             if (status == 200) {
                 response_body = body;
-                success = true;
+                success       = true;
             } else {
                 http_error = "HTTP error: " + std::to_string(status);
             }
@@ -316,15 +292,14 @@ bool QidiPrinterAgent::fetch_slot_info(const std::string& host,
         return false;
     }
 
-    if (!json.contains("result") || !json["result"].contains("status") ||
-        !json["result"]["status"].contains("save_variables") ||
+    if (!json.contains("result") || !json["result"].contains("status") || !json["result"]["status"].contains("save_variables") ||
         !json["result"]["status"]["save_variables"].contains("variables")) {
         error = "Unexpected JSON structure";
         return false;
     }
 
     auto& variables = json["result"]["status"]["save_variables"]["variables"];
-    auto& status = json["result"]["status"];
+    auto& status    = json["result"]["status"];
 
     box_count = variables.value("box_count", 1);
     if (box_count < 0) {
@@ -337,17 +312,17 @@ bool QidiPrinterAgent::fetch_slot_info(const std::string& host,
 
     for (int i = 0; i < max_slots; ++i) {
         QidiSlotInfo slot;
-        slot.slot_index = i;
-        slot.color_index = variables.value("color_slot" + std::to_string(i), 1);
+        slot.slot_index    = i;
+        slot.color_index   = variables.value("color_slot" + std::to_string(i), 1);
         slot.filament_type = variables.value("filament_slot" + std::to_string(i), 1);
-        slot.vendor_type = variables.value("vendor_slot" + std::to_string(i), 0);
+        slot.vendor_type   = variables.value("vendor_slot" + std::to_string(i), 0);
 
         std::string box_stepper_key = "box_stepper slot" + std::to_string(i);
-        slot.filament_exists = false;
+        slot.filament_exists        = false;
         if (status.contains(box_stepper_key)) {
             auto& box_stepper = status[box_stepper_key];
             if (box_stepper.contains("runout_button") && !box_stepper["runout_button"].is_null()) {
-                int runout_button = box_stepper["runout_button"].get<int>();
+                int runout_button    = box_stepper["runout_button"].get<int>();
                 slot.filament_exists = (runout_button == 0);
             }
         }
@@ -357,14 +332,12 @@ bool QidiPrinterAgent::fetch_slot_info(const std::string& host,
     return true;
 }
 
-void QidiPrinterAgent::parse_ini_section(const std::string& content,
-                                         const std::string& section_name,
-                                         std::map<int, std::string>& result)
+void QidiPrinterAgent::parse_ini_section(const std::string& content, const std::string& section_name, std::map<int, std::string>& result)
 {
     std::istringstream stream(content);
-    std::string line;
-    bool in_section = false;
-    std::string section_header = "[" + section_name + "]";
+    std::string        line;
+    bool               in_section     = false;
+    std::string        section_header = "[" + section_name + "]";
 
     while (std::getline(stream, line)) {
         boost::trim(line);
@@ -378,26 +351,24 @@ void QidiPrinterAgent::parse_ini_section(const std::string& content,
         if (in_section) {
             auto pos = line.find('=');
             if (pos != std::string::npos) {
-                std::string key = line.substr(0, pos);
+                std::string key   = line.substr(0, pos);
                 std::string value = line.substr(pos + 1);
                 boost::trim(key);
                 boost::trim(value);
                 try {
-                    int index = std::stoi(key);
+                    int index     = std::stoi(key);
                     result[index] = value;
-                } catch (...) {
-                }
+                } catch (...) {}
             }
         }
     }
 }
 
-void QidiPrinterAgent::parse_filament_sections(const std::string& content,
-                                               std::map<int, std::string>& result)
+void QidiPrinterAgent::parse_filament_sections(const std::string& content, std::map<int, std::string>& result)
 {
     std::istringstream stream(content);
-    std::string line;
-    int current_fila_index = -1;
+    std::string        line;
+    int                current_fila_index = -1;
 
     while (std::getline(stream, line)) {
         boost::trim(line);
@@ -419,7 +390,7 @@ void QidiPrinterAgent::parse_filament_sections(const std::string& content,
         if (current_fila_index > 0) {
             auto pos = line.find('=');
             if (pos != std::string::npos) {
-                std::string key = line.substr(0, pos);
+                std::string key   = line.substr(0, pos);
                 std::string value = line.substr(pos + 1);
                 boost::trim(key);
                 boost::trim(value);
@@ -431,14 +402,12 @@ void QidiPrinterAgent::parse_filament_sections(const std::string& content,
     }
 }
 
-bool QidiPrinterAgent::fetch_filament_dict(const std::string& host,
-                                           QidiFilamentDict& dict,
-                                           std::string& error) const
+bool QidiPrinterAgent::fetch_filament_dict(const std::string& host, QidiFilamentDict& dict, std::string& error) const
 {
     std::string url = "http://" + host + "/server/files/config/officiall_filas_list.cfg";
 
     std::string response_body;
-    bool success = false;
+    bool        success = false;
     std::string http_error;
 
     auto http = Http::get(url);
@@ -447,7 +416,7 @@ bool QidiPrinterAgent::fetch_filament_dict(const std::string& host,
         .on_complete([&](std::string body, unsigned status) {
             if (status == 200) {
                 response_body = body;
-                success = true;
+                success       = true;
             } else {
                 http_error = "HTTP error: " + std::to_string(status);
             }
@@ -521,8 +490,8 @@ std::string QidiPrinterAgent::map_filament_type_to_setting_id(const std::string&
 
 void QidiPrinterAgent::dispatch_message(const std::string& dev_id, const std::string& payload)
 {
-    OnMessageFn local_fn;
-    OnMessageFn cloud_fn;
+    OnMessageFn   local_fn;
+    OnMessageFn   cloud_fn;
     QueueOnMainFn queue_fn;
     {
         std::lock_guard<std::mutex> lock(state_mutex);
