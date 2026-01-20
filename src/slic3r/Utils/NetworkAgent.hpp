@@ -114,6 +114,8 @@ public:
     int start_send_gcode_to_sdcard(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn wait_fn);
     int start_local_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn);
     int start_sdcard_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn);
+    bool is_subscription_based() const;
+    void fetch_filament_info(std::string dev_id);
     int get_user_presets(std::map<std::string, std::map<std::string, std::string>>* user_presets);
     std::string request_setting_id(std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code);
     int put_setting(std::string setting_id, std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code);
@@ -162,15 +164,15 @@ public:
 
 private:
     struct PrinterCallbacks {
-        OnMsgArrivedFn on_ssdp_msg_fn;
-        OnPrinterConnectedFn on_printer_connected_fn;
-        GetSubscribeFailureFn on_subscribe_failure_fn;
-        OnMessageFn on_message_fn;
-        OnMessageFn on_user_message_fn;
-        OnLocalConnectedFn on_local_connect_fn;
-        OnMessageFn on_local_message_fn;
-        QueueOnMainFn queue_on_main_fn;
-        OnServerErrFn on_server_err_fn;
+        OnMsgArrivedFn on_ssdp_msg_fn = nullptr;
+        OnPrinterConnectedFn on_printer_connected_fn = nullptr;
+        GetSubscribeFailureFn on_subscribe_failure_fn = nullptr;
+        OnMessageFn on_message_fn = nullptr;
+        OnMessageFn on_user_message_fn = nullptr;
+        OnLocalConnectedFn on_local_connect_fn = nullptr;
+        OnMessageFn on_local_message_fn = nullptr;
+        QueueOnMainFn queue_on_main_fn = nullptr;
+        OnServerErrFn on_server_err_fn = nullptr;
     };
 
     void apply_printer_callbacks(const std::shared_ptr<IPrinterAgent>& printer_agent,

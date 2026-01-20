@@ -162,6 +162,8 @@ void NetworkAgent::set_printer_agent(std::shared_ptr<IPrinterAgent> printer_agen
             return;
         }
 
+        // Disconnect all callbacks from the old agent
+        apply_printer_callbacks(m_printer_agent, callbacks);
         // Take ownership of the incoming agent and update the agent ID
         m_printer_agent = std::move(printer_agent);
         m_printer_agent_id = m_printer_agent->get_agent_info().id;
@@ -601,6 +603,19 @@ int NetworkAgent::start_sdcard_print(PrintParams params, OnUpdateStatusFn update
 {
     if (m_printer_agent) return m_printer_agent->start_sdcard_print(params, update_fn, cancel_fn);
     return -1;
+}
+
+bool NetworkAgent::is_subscription_based() const
+{
+    if (m_printer_agent) return m_printer_agent->is_subscription_based();
+    return true;  // Default to subscription-based (safe default)
+}
+
+void NetworkAgent::fetch_filament_info(std::string dev_id)
+{
+    if (m_printer_agent) {
+        m_printer_agent->fetch_filament_info(dev_id);
+    }
 }
 
 int NetworkAgent::get_user_presets(std::map<std::string, std::map<std::string, std::string>>* user_presets)

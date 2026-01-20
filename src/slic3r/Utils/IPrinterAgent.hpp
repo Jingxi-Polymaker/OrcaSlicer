@@ -219,6 +219,23 @@ public:
      * Get agent information.
      */
     virtual AgentInfo get_agent_info() = 0;
+
+    // ========================================================================
+    // Filament Operations
+    // ========================================================================
+    /**
+     * Returns true if this agent uses subscription-based updates (e.g., MQTT).
+     * When true, filament data is pushed in real-time and fetch_filament_info()
+     * should NOT be called. When false, data must be explicitly polled.
+     */
+    virtual bool is_subscription_based() const { return true; }
+
+    /**
+     * Refresh filament info from the printer synchronously.
+     * Should only be called when is_subscription_based() returns false.
+     * Populates the MachineObject's DevFilaSystem with fetched filament data.
+     */
+    virtual void fetch_filament_info(std::string dev_id) {}
 };
 
 } // namespace Slic3r

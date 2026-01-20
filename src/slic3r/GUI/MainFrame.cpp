@@ -1247,8 +1247,9 @@ void MainFrame::show_device(bool bBBLPrinter) {
             m_tabpanel->RemovePage(idx);
         }
         if ((idx = m_tabpanel->FindPage(m_monitor)) != wxNOT_FOUND) {
-            m_monitor->Show(false);
-            m_tabpanel->RemovePage(idx);
+            // ORCA TODO: for debug purpose, show the monitor page, remove this after debug
+            m_monitor->Show(true);
+            // m_tabpanel->RemovePage(idx);
         }
         if (m_printer_view == nullptr) {
             m_printer_view = new PrinterWebView(m_tabpanel);
