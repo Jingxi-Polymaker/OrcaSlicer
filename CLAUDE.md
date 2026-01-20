@@ -3,6 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## **Always** check if PROJ_AGENTS.md file exists, if it does, read it to learn the current task that is being worked on.
+## **Always** when writing markdown files, always use Obsidian Markdown flavor. use Obsidian skills
 
 ## Overview
 
@@ -10,21 +11,15 @@ OrcaSlicer is an open-source 3D slicer application forked from Bambu Studio, bui
 
 ## Build Commands
 
-**Never delete whole build folder without user confirmation!**
-**Always use all cores for building.**
 ### Building on Windows
 ```bash
 # Build everything
-build_release_vs2022.bat
-
-# Build with debug symbols
-build_release_vs2022.bat debug
 
 # Build only dependencies
 build_release_vs2022.bat deps
 
-# Build only slicer (after deps are built)
-build_release_vs2022.bat slicer
+# Build only slicer, you should always use this command to build the project when testing build issues.
+cmake --build . --config %build_type% --target ALL_BUILD -- -m
 
 
 ```
@@ -34,35 +29,19 @@ build_release_vs2022.bat slicer
 # Build only dependencies
 ./build_release_macos.sh -d
 
-# Build only slicer (after deps are built)
+# Build only slicer, you should always use this command to build the project when testing build issues.
 cmake --build build/arm64 --config RelWithDebInfo --target all --
 
 ```
 
 ### Building on Linux
 ```bash
-# First time setup - install system dependencies
-./build_linux.sh -u
-
-# Build dependencies and slicer
-./build_linux.sh -dsi
-
-# Build everything (alternative)
-./build_linux.sh -dsi
-
 # Individual options:
 ./build_linux.sh -d    # dependencies only
-./build_linux.sh -s    # slicer only  
-./build_linux.sh -i    # build AppImage
 
-# Performance and debug options:
-./build_linux.sh -j N  # limit to N cores
-./build_linux.sh -1    # single core build
-./build_linux.sh -b    # Debug build
-./build_linux.sh -e    # RelWithDebInfo build
-./build_linux.sh -c    # clean build
-./build_linux.sh -r    # skip RAM/disk checks
-./build_linux.sh -l    # use Clang instead of GCC
+# Build only slicer, you should always use this command to build the project when testing build issues.
+cmake --build build/arm64 --config RelWithDebInfo --target all --
+
 ```
 
 ### Build System
