@@ -608,6 +608,8 @@ set(SLIC3R_GUI_SOURCES
     Utils/OrcaPrinterAgent.hpp
     Utils/QidiPrinterAgent.cpp
     Utils/QidiPrinterAgent.hpp
+    Utils/MoonrakerPrinterAgent.cpp
+    Utils/MoonrakerPrinterAgent.hpp
     Utils/BBLCloudServiceAgent.cpp
     Utils/BBLCloudServiceAgent.hpp
     Utils/BBLPrinterAgent.cpp

@@ -3495,7 +3495,10 @@ void GUI_App::switch_printer_agent(const std::string& agent_id)
         return;
     }
 
-    const auto current_agent_id = m_agent->get_printer_agent()->get_agent_info().id;
+    std::string current_agent_id;
+    if (m_agent && m_agent->get_printer_agent())
+        current_agent_id = m_agent->get_printer_agent()->get_agent_info().id;
+    
     if (!current_agent_id.empty() && current_agent_id == effective_agent_id) {
         return;
     }

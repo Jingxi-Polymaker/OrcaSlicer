@@ -227,9 +227,11 @@ inline std::unique_ptr<NetworkAgent> create_agent_from_config(const std::string&
         return nullptr;
     }
 
-    auto bbl_printer_agent = NetworkAgentFactory::create_printer_agent_by_id("bbl", cloud_agent, log_dir);
+    // auto bbl_printer_agent = NetworkAgentFactory::create_printer_agent_by_id("bbl", cloud_agent, log_dir);
+    
     // Create NetworkAgent with cloud agent only (printer agent added later)
-    auto agent = NetworkAgentFactory::create_from_agents(std::move(cloud_agent), bbl_printer_agent);
+    // We will create the printer agent later when the printer is selected, so we pass nullptr for the printer agent here.
+    auto agent = NetworkAgentFactory::create_from_agents(std::move(cloud_agent), nullptr);
 
     // Configure URL overrides for Orca cloud
     if (agent && app_config && use_orca_cloud) {

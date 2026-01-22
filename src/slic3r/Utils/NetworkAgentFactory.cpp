@@ -4,6 +4,7 @@
 #include "BBLPrinterAgent.hpp"
 #include "OrcaPrinterAgent.hpp"
 #include "QidiPrinterAgent.hpp"
+#include "MoonrakerPrinterAgent.hpp"
 #include <boost/log/trivial.hpp>
 
 namespace Slic3r {
@@ -134,6 +135,20 @@ void NetworkAgentFactory::register_all_agents()
                                [](std::shared_ptr<ICloudServiceAgent> cloud_agent,
                                   const std::string&                  log_dir) -> std::shared_ptr<IPrinterAgent> {
                                    auto agent = std::make_shared<QidiPrinterAgent>(log_dir);
+                                   if (cloud_agent) {
+                                       agent->set_cloud_agent(cloud_agent);
+                                   }
+                                   return agent;
+                               });
+    }
+
+    // Register Moonraker printer agent
+    {
+        auto info = MoonrakerPrinterAgent::get_agent_info_static();
+        register_printer_agent(info.id, info.name,
+                               [](std::shared_ptr<ICloudServiceAgent> cloud_agent,
+                                  const std::string&                  log_dir) -> std::shared_ptr<IPrinterAgent> {
+                                   auto agent = std::make_shared<MoonrakerPrinterAgent>(log_dir);
                                    if (cloud_agent) {
                                        agent->set_cloud_agent(cloud_agent);
                                    }
