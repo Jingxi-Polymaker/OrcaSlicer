@@ -2080,8 +2080,23 @@ void GUI_App::init_networking_callbacks()
                         return;
                     }
                     /* request_pushing */
+                    BOOST_LOG_TRIVIAL(info) << "set_on_local_connect_fn callback: state=" << state
+                                            << " dev_id=" << dev_id << " msg=" << msg;
                     MachineObject* obj = m_device_manager->get_my_machine(dev_id);
                     wxCommandEvent event(EVT_CONNECT_LAN_MODE_PRINT);
+
+                    if (!obj) {
+                        // Debug: try to find in localMachineList directly
+                        auto* local_obj = m_device_manager->get_local_machine(dev_id);
+                        BOOST_LOG_TRIVIAL(warning) << "set_on_local_connect_fn: get_my_machine returned nullptr for dev_id="
+                                                   << dev_id << ", local_machine exists=" << (local_obj != nullptr);
+                        if (local_obj) {
+                            BOOST_LOG_TRIVIAL(warning) << "  has_access_right=" << local_obj->has_access_right()
+                                                       << " is_avaliable=" << local_obj->is_avaliable()
+                                                       << " is_lan_mode=" << local_obj->is_lan_mode_printer()
+                                                       << " access_code=" << local_obj->get_access_code();
+                        }
+                    }
 
                     if (obj) {
 
@@ -2204,6 +2219,16 @@ void GUI_App::init_networking_callbacks()
                     obj->parse_json("lan", msg);
                     if (this->m_device_manager->get_selected_machine() == obj) {
                         GUI::wxGetApp().sidebar().load_ams_list(obj);
+                    }
+                } else {
+                    // Debug: message received but machine not found
+                    auto* local_obj = m_device_manager->get_local_machine(dev_id);
+                    BOOST_LOG_TRIVIAL(warning) << "lan_message_arrive: get_my_machine returned nullptr for dev_id="
+                                               << dev_id << ", local_machine exists=" << (local_obj != nullptr);
+                    if (local_obj) {
+                        BOOST_LOG_TRIVIAL(warning) << "  has_access_right=" << local_obj->has_access_right()
+                                                   << " is_avaliable=" << local_obj->is_avaliable()
+                                                   << " is_lan_mode=" << local_obj->is_lan_mode_printer();
                     }
                 }
 
@@ -3526,6 +3551,27 @@ void GUI_App::switch_printer_agent(const std::string& agent_id)
     // Update dependent managers
     if (m_device_manager) {
         m_device_manager->set_agent(m_agent);
+
+        // If there's a selected machine that was deferred due to no printer agent,
+        // trigger a connection now that the agent is ready
+        MachineObject* selected = m_device_manager->get_selected_machine();
+        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": checking for deferred connection - selected="
+                               << (selected ? selected->get_dev_id() : "null");
+        if (selected) {
+            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": selected machine - is_lan_mode=" << selected->is_lan_mode_printer()
+                                   << " is_connected=" << selected->is_connected();
+        }
+        if (selected && selected->is_lan_mode_printer() && !selected->is_connected()) {
+            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": connecting deferred LAN machine dev_id=" << selected->get_dev_id();
+#if !BBL_RELEASE_TO_PUBLIC
+            selected->connect(app_config->get("enable_ssl_for_mqtt") == "true" ? true : false);
+#else
+            selected->connect(selected->local_use_ssl_for_mqtt);
+#endif
+            selected->set_lan_mode_connection_state(true);
+        }
+    } else {
+        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": m_device_manager is null, cannot check for deferred connection";
     }
 
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": printer agent switched to " << effective_agent_id;

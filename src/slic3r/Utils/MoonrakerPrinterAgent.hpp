@@ -80,6 +80,7 @@ private:
         std::string port;
         std::string api_key;
         std::string base_url;
+        std::string model_name;
     };
 
     struct MoonrakerDeviceInfo
@@ -115,7 +116,31 @@ private:
     void update_status_cache(const nlohmann::json& updates);
     nlohmann::json build_print_payload_locked() const;
 
-    mutable std::mutex                 state_mutex;
+    // Print control helpers
+    int pause_print(const std::string& dev_id);
+    int resume_print(const std::string& dev_id);
+    int cancel_print(const std::string& dev_id);
+
+    // File upload
+    bool upload_gcode(const std::string& local_path, const std::string& filename,
+                      const std::string& base_url, const std::string& api_key,
+                      OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn);
+
+    // JSON-RPC helper
+    bool send_jsonrpc_command(const std::string& base_url, const std::string& api_key,
+                              const nlohmann::json& request, std::string& response) const;
+
+    // Server info (returns JSON, not just version string)
+    bool fetch_server_info_json(const std::string& base_url, const std::string& api_key,
+                                 nlohmann::json& info, std::string& error) const;
+
+    // Connection thread management
+    void perform_connection_async(const std::string& dev_id,
+                                   const std::string& base_url,
+                                   const std::string& api_key);
+    void finish_connection();
+
+    mutable std::recursive_mutex       state_mutex;
     std::map<std::string, std::string> host_by_device;
     std::map<std::string, std::string> api_key_by_device;
     std::string                        ssdp_announced_host;
@@ -133,12 +158,23 @@ private:
     QueueOnMainFn        queue_on_main_fn;
     OnServerErrFn        on_server_err_fn;
 
-    mutable std::mutex payload_mutex;
+    mutable std::recursive_mutex payload_mutex;
     nlohmann::json     status_cache;
 
+    std::atomic<int>       next_jsonrpc_id{1};
+    std::set<std::string>  available_objects;  // Track for feature detection
+
     std::atomic<bool>   ws_stop{false};
+    std::atomic<bool>   ws_reconnect_requested{false};  // Flag to trigger reconnection
     std::atomic<uint64_t> ws_last_emit_ms{0};
     std::thread         ws_thread;
+
+    // Connection thread management
+    std::atomic<bool>   connect_in_progress{false};
+    std::atomic<bool>   connect_stop_requested{false};
+    std::thread         connect_thread;
+    std::recursive_mutex connect_mutex;
+    std::condition_variable connect_cv;
 };
 
 } // namespace Slic3r
