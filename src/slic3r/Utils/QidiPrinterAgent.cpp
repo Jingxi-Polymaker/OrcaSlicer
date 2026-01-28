@@ -254,7 +254,7 @@ QidiPrinterAgent::~QidiPrinterAgent()
 
 AgentInfo QidiPrinterAgent::get_agent_info_static()
 {
-    return AgentInfo{.id = "qidi", .name = "Qidi Printer Agent", .version = QidiPrinterAgent_VERSION, .description = "Qidi printer agent"};
+    return AgentInfo{"qidi", "Qidi Printer Agent", QidiPrinterAgent_VERSION, "Qidi printer agent"};
 }
 
 int QidiPrinterAgent::send_message(std::string dev_id, std::string json_str, int qos, int flag)

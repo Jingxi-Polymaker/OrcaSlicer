@@ -207,12 +207,7 @@ int BBLPrinterAgent::set_user_selected_machine(std::string dev_id)
 // ============================================================================
 AgentInfo BBLPrinterAgent::get_agent_info_static()
 {
-    return AgentInfo{
-        .id = "bbl",
-        .name = "Bambu Lab Printer Agent",
-        .version = "",
-        .description = "Bambu Lab printer agent"
-    };
+    return AgentInfo{"bbl", "Bambu Lab Printer Agent", "", "Bambu Lab printer agent"};
 }
 
 // ============================================================================
