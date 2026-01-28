@@ -970,18 +970,18 @@ void GUI_App::post_init()
     }
 
     // Start preset sync after project opened, otherwise we could have preset change during project opening which could cause crash 
-    // if (app_config->get("sync_user_preset") == "true") {
-    //     // BBS loading user preset
-    //     // Always async, not such startup step
-    //     // BOOST_LOG_TRIVIAL(info) << "Loading user presets...";
-    //     // scrn->SetText(_L("Loading user presets..."));
-    //     if (m_agent) {
-    //         start_sync_user_preset();
-    //     }
-    //     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " sync_user_preset: true";
-    // } else {
-    //     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " sync_user_preset: false";
-    // }
+    if (app_config->get("sync_user_preset") == "true") {
+        // BBS loading user preset
+        // Always async, not such startup step
+        // BOOST_LOG_TRIVIAL(info) << "Loading user presets...";
+        // scrn->SetText(_L("Loading user presets..."));
+        if (m_agent) {
+            start_sync_user_preset();
+        }
+        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " sync_user_preset: true";
+    } else {
+        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " sync_user_preset: false";
+    }
 
     // The extra CallAfter() is needed because of Mac, where this is the only way
     // to popup a modal dialog on start without screwing combo boxes.
