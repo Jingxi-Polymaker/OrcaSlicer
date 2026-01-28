@@ -957,13 +957,39 @@ int OrcaCloudServiceAgent::get_user_presets(std::map<std::string, std::map<std::
     }
 
     auto on_success = [&](const SyncPullResponse& resp) {
+        // Get current user_id for all presets (required by load_user_preset)
+        std::string current_user_id = get_user_id();
+
         for (const auto& upsert : resp.upserts) {
-            std::string preset_type = IOT_PRINT_TYPE_STRING;
-            if (upsert.content.contains("type") && upsert.content["type"].is_string()) {
-                preset_type = upsert.content["type"].get<std::string>();
+            // Parse JSON content into key-value pairs using helper
+            std::map<std::string, std::string> value_map;
+            json_to_map(upsert.content.dump(), value_map);
+
+            // Add metadata from top-level sync response if not already in content
+            // These are required by PresetCollection::load_user_preset
+            if (value_map.find(BBL_JSON_KEY_SETTING_ID) == value_map.end()) {
+                value_map[BBL_JSON_KEY_SETTING_ID] = upsert.id;
+            }
+            if (value_map.find(BBL_JSON_KEY_USER_ID) == value_map.end()) {
+                value_map[BBL_JSON_KEY_USER_ID] = current_user_id;
             }
 
-            (*user_presets)[preset_type][upsert.id] = upsert.content.dump();
+            // Use preset name from content or fallback to upsert.name or upsert.id
+            std::string preset_name = upsert.content.value(BBL_JSON_KEY_NAME, "");
+            if (preset_name.empty()) {
+                preset_name = upsert.name.empty() ? upsert.id : upsert.name;
+            }
+
+            // Store as: user_presets[preset_name][key] = value
+            // This matches the format expected by PresetBundle::load_user_presets
+            (*user_presets)[preset_name] = value_map;
+
+            // OLD CODE (incorrect format - kept for reference):
+            // std::string preset_type = IOT_PRINT_TYPE_STRING;
+            // if (upsert.content.contains("type") && upsert.content["type"].is_string()) {
+            //     preset_type = upsert.content["type"].get<std::string>();
+            // }
+            // (*user_presets)[preset_type][upsert.id] = upsert.content.dump();
         }
 
         if (!resp.next_cursor.empty()) {
@@ -1216,7 +1242,7 @@ int OrcaCloudServiceAgent::sync_pull(
 
     std::string path = ORCA_SYNC_PULL_PATH;
     if (!sync_state.last_sync_timestamp.empty()) {
-        path += "?cursor=" + sync_state.last_sync_timestamp;
+        path += "?cursor=" + Http::url_encode(sync_state.last_sync_timestamp);
     }
 
     std::string response;
