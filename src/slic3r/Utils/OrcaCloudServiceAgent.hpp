@@ -40,7 +40,7 @@ struct ProfileUpsert {
     std::string name;
     nlohmann::json content;
     std::string updated_time;
-    std::string created_at;
+    std::string created_time;
 };
 
 struct SyncPullResponse {

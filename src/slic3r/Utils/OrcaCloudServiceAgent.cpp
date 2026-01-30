@@ -1288,7 +1288,7 @@ int OrcaCloudServiceAgent::sync_pull(
                 upsert.id = item.value("id", "");
                 upsert.name = item.value("name", "");
                 upsert.updated_time = item.value(ORCA_JSON_KEY_UPDATE_TIME, "");
-                upsert.created_at = item.value(ORCA_JSON_KEY_CREATED_TIME, "");
+                upsert.created_time = item.value(ORCA_JSON_KEY_CREATED_TIME, "");
                 if (item.contains("content")) {
                     upsert.content = item["content"];
                 }
