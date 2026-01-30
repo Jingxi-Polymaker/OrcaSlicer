@@ -973,6 +973,9 @@ int OrcaCloudServiceAgent::get_user_presets(std::map<std::string, std::map<std::
             if (value_map.find(BBL_JSON_KEY_USER_ID) == value_map.end()) {
                 value_map[BBL_JSON_KEY_USER_ID] = current_user_id;
             }
+            if (value_map.find(ORCA_JSON_KEY_UPDATE_TIME) == value_map.end()) {
+                value_map[ORCA_JSON_KEY_UPDATE_TIME] = upsert.updated_time;
+            }
 
             // Use preset name from content or fallback to upsert.name or upsert.id
             std::string preset_name = upsert.content.value(BBL_JSON_KEY_NAME, "");
@@ -1041,17 +1044,17 @@ std::string OrcaCloudServiceAgent::request_setting_id(std::string name, std::map
         }
     }
 
-    // Use sync_push to create the profile (no original_updated_at for new profiles per spec)
+    // Use sync_push to create the profile (no original_updated_time for new profiles per spec)
     auto result = sync_push(new_id, name, content, "");
     if (http_code) *http_code = result.http_code;
 
     if (result.success) {
-        // Return new_updated_at via values_map so caller can store it in Preset::updated_time
-        if (values_map && !result.new_updated_at.empty()) {
-            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.new_updated_at;
+        // Return new_updated_time via values_map so caller can store it in Preset::updated_time
+        if (values_map && !result.new_updated_time.empty()) {
+            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.new_updated_time;
         }
         BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Created preset - setting_id=" << new_id
-                                << ", new_updated_at=" << result.new_updated_at;
+                                << ", new_updated_time=" << result.new_updated_time;
         return new_id;
     }
 
@@ -1063,13 +1066,13 @@ int OrcaCloudServiceAgent::put_setting(std::string setting_id, std::string name,
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: put_setting - setting_id=" << setting_id << ", name=" << name;
 
-    // Extract original_updated_at for Optimistic Concurrency Control (per spec section 5.2)
+    // Extract original_updated_time for Optimistic Concurrency Control (per spec section 5.2)
     // If present, server will verify version before update. If absent, treated as insert.
-    std::string original_updated_at;
+    std::string original_updated_time;
     if (values_map) {
         auto it = values_map->find(IOT_JSON_KEY_UPDATED_TIME);
         if (it != values_map->end()) {
-            original_updated_at = it->second;
+            original_updated_time = it->second;
         }
     }
 
@@ -1085,25 +1088,25 @@ int OrcaCloudServiceAgent::put_setting(std::string setting_id, std::string name,
         }
     }
 
-    auto result = sync_push(setting_id, name, content, original_updated_at);
+    auto result = sync_push(setting_id, name, content, original_updated_time);
     if (http_code) *http_code = result.http_code;
 
     if (result.success) {
-        if (values_map && !result.new_updated_at.empty()) {
-            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.new_updated_at;
+        if (values_map && !result.new_updated_time.empty()) {
+            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.new_updated_time;
         }
         BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Updated preset - setting_id=" << setting_id
-                                << ", new_updated_at=" << result.new_updated_at;
+                                << ", new_updated_time=" << result.new_updated_time;
         return BAMBU_NETWORK_SUCCESS;
     }
 
     if (result.http_code == 409) {
         // Conflict - update values_map with server version
-        if (values_map && !result.server_version.updated_at.empty()) {
-            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.server_version.updated_at;
+        if (values_map && !result.server_version.updated_time.empty()) {
+            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.server_version.updated_time;
         }
-        BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: put_setting conflict - server_updated_at="
-                                   << result.server_version.updated_at;
+        BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: put_setting conflict - server_updated_time="
+                                   << result.server_version.updated_time;
     }
 
     BOOST_LOG_TRIVIAL(error) << "OrcaCloudServiceAgent: put_setting failed - " << result.error_message;
@@ -1137,7 +1140,7 @@ int OrcaCloudServiceAgent::get_setting_list2(std::string bundle_version, CheckFn
             if (chk_fn) {
                 std::map<std::string, std::string> info;
                 info[IOT_JSON_KEY_SETTING_ID] = upsert.id;
-                info[IOT_JSON_KEY_UPDATED_TIME] = upsert.updated_at;
+                info[IOT_JSON_KEY_UPDATED_TIME] = upsert.updated_time;
 
                 if (upsert.content.is_object()) {
                     for (auto& [key, value] : upsert.content.items()) {
@@ -1284,7 +1287,7 @@ int OrcaCloudServiceAgent::sync_pull(
                 ProfileUpsert upsert;
                 upsert.id = item.value("id", "");
                 upsert.name = item.value("name", "");
-                upsert.updated_at = item.value(ORCA_JSON_KEY_UPDATE_TIME, "");
+                upsert.updated_time = item.value(ORCA_JSON_KEY_UPDATE_TIME, "");
                 upsert.created_at = item.value(ORCA_JSON_KEY_CREATED_TIME, "");
                 if (item.contains("content")) {
                     upsert.content = item["content"];
@@ -1313,7 +1316,7 @@ SyncPushResult OrcaCloudServiceAgent::sync_push(
     const std::string& profile_id,
     const std::string& name,
     const nlohmann::json& content,
-    const std::string& original_updated_at)
+    const std::string& original_updated_time)
 {
     BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: sync_push - " << profile_id;
 
@@ -1326,8 +1329,8 @@ SyncPushResult OrcaCloudServiceAgent::sync_push(
     body["id"] = profile_id;
     body["name"] = name;
     body["content"] = content;
-    if (!original_updated_at.empty()) {
-        body["original_updated_at"] = original_updated_at;
+    if (!original_updated_time.empty()) {
+        body["original_updated_time"] = original_updated_time;
     }
 
     std::string response;
@@ -1350,7 +1353,7 @@ SyncPushResult OrcaCloudServiceAgent::sync_push(
             } else {
                 result.server_version.id = json.value("id", "");
                 result.server_version.name = json.value("name", "");
-                result.server_version.updated_at = json.value(ORCA_JSON_KEY_UPDATE_TIME, "");
+                result.server_version.updated_time = json.value(ORCA_JSON_KEY_UPDATE_TIME, "");
             }
         } catch (...) {}
         result.error_message = response;
@@ -1365,11 +1368,11 @@ SyncPushResult OrcaCloudServiceAgent::sync_push(
     // Success
     try {
         auto json = nlohmann::json::parse(response);
-        result.new_updated_at = json.value(ORCA_JSON_KEY_UPDATE_TIME, "");
-        if (!result.new_updated_at.empty()) {
+        result.new_updated_time = json.value(ORCA_JSON_KEY_UPDATE_TIME, "");
+        if (!result.new_updated_time.empty()) {
             result.success = true;
         } else {
-            result.error_message = "Server response missing required updated_at timestamp";
+            result.error_message = "Server response missing required updated_time timestamp";
         }
     } catch (const std::exception& e) {
         result.error_message = e.what();
