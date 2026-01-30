@@ -53,7 +53,7 @@ constexpr const char* ORCA_DEFAULT_PUB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVC
 constexpr const char* ORCA_HEALTH_PATH = "/api/v1/health";
 constexpr const char* ORCA_SYNC_PULL_PATH = "/api/v1/sync/pull";
 constexpr const char* ORCA_SYNC_PUSH_PATH = "/api/v1/sync/push";
-constexpr const char* ORCA_PROFILES_PATH = "/api/v1/profiles";
+constexpr const char* ORCA_PROFILES_PATH = "/api/v1/sync/profiles";
 constexpr const char* ORCA_SYNC_STATE_FILE = "sync_state";
 
 constexpr const char* CONFIG_ORCA_API_URL = "orca_api_url";
