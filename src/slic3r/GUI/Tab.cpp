@@ -5874,7 +5874,7 @@ bool Tab::select_preset(
                             process_presets.push_front(preset);
                         else
                             process_presets.push_back(preset);
-                        if (!preset.setting_id.empty()) { m_preset_bundle->filaments.set_sync_info_and_save(preset.name, preset.setting_id, "delete", ""); }
+                        if (!preset.setting_id.empty()) { m_preset_bundle->prints.set_sync_info_and_save(preset.name, preset.setting_id, "delete", ""); }
                     }
                 }
             }
