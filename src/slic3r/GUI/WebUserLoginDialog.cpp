@@ -43,9 +43,10 @@ int ZUserLogin::web_sequence_id = 20000;
 ZUserLogin::ZUserLogin() : wxDialog((wxWindow *) (wxGetApp().mainframe), wxID_ANY, "OrcaSlicer")
 {
     SetBackgroundColour(*wxWHITE);
+    const auto bblnetwork_enabled =wxGetApp().app_config->get_bool("installed_networking");
     // Url
     NetworkAgent* agent = wxGetApp().getAgent();
-    if (!agent) {
+    if (!agent && bblnetwork_enabled) {
 
         SetBackgroundColour(*wxWHITE);
 
@@ -264,89 +265,75 @@ void ZUserLogin::OnFullScreenChanged(wxWebViewEvent &evt)
 void ZUserLogin::OnScriptMessage(wxWebViewEvent &evt)
 {
     wxString str_input = evt.GetString();
-    BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] OnScriptMessage received: " << str_input.ToStdString();
 
     try {
         json j = json::parse(into_u8(str_input));
-
-        BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Parsed JSON successfully";
-
         wxString strCmd = j["command"];
-        BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Command: " << strCmd.ToStdString();
+        
+        NetworkAgent* agent = wxGetApp().getAgent();
+        if (agent && strCmd == "get_login_cmd" && agent->get_cloud_agent()) {
+            // Return login config (backend_url, apikey, pkce)
+            // WebView handles provider selection internally
+            std::string login_cmd = agent->build_login_cmd();
+            m_loopback_port       = 0;
+            try {
+                json cfg = json::parse(login_cmd);
+                if (cfg.contains("pkce")) {
+                    const auto& pkce = cfg["pkce"];
+                    if (pkce.contains("loopback_port")) {
+                        if (pkce["loopback_port"].is_number_integer()) {
+                            m_loopback_port = pkce["loopback_port"].get<int>();
+                        } else if (pkce["loopback_port"].is_string()) {
+                            m_loopback_port = std::stoi(pkce["loopback_port"].get<std::string>());
+                        }
+                    }
 
-        if (strCmd == "get_login_cmd") {
-             NetworkAgent* agent = wxGetApp().getAgent();
-             if (agent) {
-                 // Return login config (backend_url, apikey, pkce)
-                 // WebView handles provider selection internally
-                 std::string login_cmd = agent->build_login_cmd();
-                 m_loopback_port = 0;
-                 try {
-                     json cfg = json::parse(login_cmd);
-                     if (cfg.contains("pkce")) {
-                         const auto& pkce = cfg["pkce"];
-                         if (pkce.contains("loopback_port")) {
-                             if (pkce["loopback_port"].is_number_integer()) {
-                                 m_loopback_port = pkce["loopback_port"].get<int>();
-                             } else if (pkce["loopback_port"].is_string()) {
-                                 m_loopback_port = std::stoi(pkce["loopback_port"].get<std::string>());
-                             }
-                         }
-
-                         if (m_loopback_port <= 0 && pkce.contains("redirect_uri") && pkce["redirect_uri"].is_string()) {
-                             const std::string redirect_uri = pkce["redirect_uri"].get<std::string>();
-                             const char* prefixes[] = {"localhost:", "127.0.0.1:"};
-                             for (const char* prefix : prefixes) {
-                                 auto start = redirect_uri.find(prefix);
-                                 if (start == std::string::npos) continue;
-                                 start += strlen(prefix);
-                                 auto end = redirect_uri.find('/', start);
-                                 std::string port_str = redirect_uri.substr(start, end - start);
-                                 try {
-                                     m_loopback_port = std::stoi(port_str);
-                                 } catch (...) {
-                                     m_loopback_port = 0;
-                                 }
-                                 break;
-                             }
-                         }
-                     }
-                 } catch (...) {
-                     m_loopback_port = 0;
-                 }
-                 wxString str_js = wxString::FromUTF8("window.postMessage(") + wxString::FromUTF8(login_cmd.c_str()) + wxString::FromUTF8(", '*')");
-                 this->RunScript(str_js);
-             }
-             return;
+                    if (m_loopback_port <= 0 && pkce.contains("redirect_uri") && pkce["redirect_uri"].is_string()) {
+                        const std::string redirect_uri = pkce["redirect_uri"].get<std::string>();
+                        const char*       prefixes[]   = {"localhost:", "127.0.0.1:"};
+                        for (const char* prefix : prefixes) {
+                            auto start = redirect_uri.find(prefix);
+                            if (start == std::string::npos)
+                                continue;
+                            start += strlen(prefix);
+                            auto        end      = redirect_uri.find('/', start);
+                            std::string port_str = redirect_uri.substr(start, end - start);
+                            try {
+                                m_loopback_port = std::stoi(port_str);
+                            } catch (...) {
+                                m_loopback_port = 0;
+                            }
+                            break;
+                        }
+                    }
+                }
+            } catch (...) {
+                m_loopback_port = 0;
+            }
+            wxString str_js = wxString::FromUTF8("window.postMessage(") + wxString::FromUTF8(login_cmd.c_str()) +
+                              wxString::FromUTF8(", '*')");
+            this->RunScript(str_js);
+            return;
         }
 
         if (strCmd == "autotest_token")
         {
             m_AutotestToken = j["data"]["token"];
-            BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Stored autotest_token";
         }
         if (strCmd == "user_login") {
-            BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Processing user_login command";
-            BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] User data: " << j["data"].dump();
-
             j["data"]["autotest_token"] = m_AutotestToken;
             std::string message_json = j.dump();
 
-            BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Calling handle_script_message with: " << message_json;
-
             // End modal dialog first to unblock event loop before processing callbacks
-            BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Ending modal dialog";
             EndModal(wxID_OK);
 
             // Handle message after modal dialog ends to avoid deadlock
             // Use wxTheApp->CallAfter to ensure it runs after modal loop exits
             wxTheApp->CallAfter([message_json]() {
-                BOOST_LOG_TRIVIAL(info) << "[WebUserLoginDialog] Processing login message after modal ended";
                 wxGetApp().handle_script_message(message_json);
             });
         }
         else if (strCmd == "get_localhost_url") {
-            BOOST_LOG_TRIVIAL(info) << "thirdparty_login: get_localhost_url";
             int loopback_port = m_loopback_port > 0 ? m_loopback_port : LOCALHOST_PORT;
             wxGetApp().start_http_server(loopback_port);
             std::string sequence_id = j["sequence_id"].get<std::string>();
@@ -362,7 +349,6 @@ void ZUserLogin::OnScriptMessage(wxWebViewEvent &evt)
             });
         }
         else if (strCmd == "thirdparty_login") {
-            BOOST_LOG_TRIVIAL(info) << "thirdparty_login: thirdparty_login";
             if (j["data"].contains("url")) {
                 std::string jump_url = j["data"]["url"].get<std::string>();
                 int loopback_port = m_loopback_port > 0 ? m_loopback_port : LOCALHOST_PORT;

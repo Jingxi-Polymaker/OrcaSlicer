@@ -4,7 +4,6 @@
 #include "IPrinterAgent.hpp"
 #include "ICloudServiceAgent.hpp"
 
-#include <map>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -15,7 +14,7 @@
 
 namespace Slic3r {
 
-class MoonrakerPrinterAgent final : public IPrinterAgent
+class MoonrakerPrinterAgent : public IPrinterAgent
 {
 public:
     explicit MoonrakerPrinterAgent(std::string log_dir);
@@ -69,41 +68,66 @@ public:
     int set_on_local_message_fn(OnMessageFn fn) override;
     int set_queue_on_main_fn(QueueOnMainFn fn) override;
 
-    // Non-subscription-based agent
-    bool is_subscription_based() const override { return false; }
-    void fetch_filament_info(std::string dev_id) override;
+    // Pull-mode agent (on-demand filament sync)
+    FilamentSyncMode get_filament_sync_mode() const override { return FilamentSyncMode::pull; }
+    bool fetch_filament_info(std::string dev_id) override;
 
-private:
-    struct PrinthostConfig
-    {
-        std::string host;
-        std::string port;
-        std::string api_key;
-        std::string base_url;
-        std::string model_name;
-    };
-
+protected:
     struct MoonrakerDeviceInfo
     {
         std::string dev_id;
+        std::string dev_ip;
+        std::string api_key;
+        std::string base_url;
+        std::string model_id;
+        std::string model_name;
         std::string dev_name;
         std::string version;
+        std::string klippy_state;
+        bool        use_ssl = false;
+    } device_info;
+
+    // Tray data for AMS payload building
+    struct AmsTrayData {
+        int         slot_index = 0;      // 0-based slot index
+        bool        has_filament = false;
+        std::string tray_type;           // Material type (e.g., "PLA", "ASA")
+        std::string tray_color;          // Raw color (#RRGGBB, 0xRRGGBB, or RRGGBBAA)
+        std::string tray_info_idx;       // Setting ID (optional)
+        int         bed_temp = 0;        // Optional
+        int         nozzle_temp = 0;     // Optional
     };
 
+    // Build ams JSON and call parser
+    void build_ams_payload(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays);
+
+    // Methods that derived classes may need to override or access
+    virtual bool init_device_info(std::string dev_id, std::string dev_ip, std::string username, std::string password, bool use_ssl);
+    virtual bool fetch_device_info(const std::string& base_url, const std::string& api_key, MoonrakerDeviceInfo& info, std::string& error) const;
+
+    // State access for derived classes
+    mutable std::recursive_mutex       state_mutex;
+
+    // Helpers
+    bool        is_numeric(const std::string& value);
+    std::string normalize_base_url(std::string host, const std::string& port);
+    std::string sanitize_filename(const std::string& filename);
+    std::string join_url(const std::string& base_url, const std::string& path) const;
+
+    // Trim whitespace and convert to uppercase
+    static std::string trim_and_upper(const std::string& input);
+
+    // Map filament type to OrcaFilamentLibrary preset ID for AMS sync compatibility
+    static std::string map_filament_type_to_generic_id(const std::string& filament_type);
+
+private:
     int handle_request(const std::string& dev_id, const std::string& json_str);
     int send_version_info(const std::string& dev_id);
     int send_access_code(const std::string& dev_id);
 
-    bool get_printhost_config(PrinthostConfig& config) const;
-    bool fetch_device_info(const std::string& base_url, const std::string& api_key, MoonrakerDeviceInfo& info, std::string& error) const;
-    bool fetch_server_info(const std::string& base_url, const std::string& api_key, std::string& version, std::string& error) const;
     bool fetch_object_list(const std::string& base_url, const std::string& api_key, std::set<std::string>& objects, std::string& error) const;
     bool query_printer_status(const std::string& base_url, const std::string& api_key, nlohmann::json& status, std::string& error) const;
     bool send_gcode(const std::string& dev_id, const std::string& gcode) const;
-
-    std::string resolve_host(const std::string& dev_id) const;
-    std::string resolve_api_key(const std::string& dev_id, const std::string& fallback) const;
-    void        store_host(const std::string& dev_id, const std::string& host, const std::string& api_key);
 
     void announce_printhost_device();
     void dispatch_local_connect(int state, const std::string& dev_id, const std::string& msg);
@@ -130,19 +154,12 @@ private:
     bool send_jsonrpc_command(const std::string& base_url, const std::string& api_key,
                               const nlohmann::json& request, std::string& response) const;
 
-    // Server info (returns JSON, not just version string)
-    bool fetch_server_info_json(const std::string& base_url, const std::string& api_key,
-                                 nlohmann::json& info, std::string& error) const;
-
     // Connection thread management
     void perform_connection_async(const std::string& dev_id,
                                    const std::string& base_url,
-                                   const std::string& api_key);
-    void finish_connection();
+                                   const std::string& api_key,
+                                   uint64_t generation);
 
-    mutable std::recursive_mutex       state_mutex;
-    std::map<std::string, std::string> host_by_device;
-    std::map<std::string, std::string> api_key_by_device;
     std::string                        ssdp_announced_host;
     std::string                        ssdp_announced_id;
     std::shared_ptr<ICloudServiceAgent> m_cloud_agent;
@@ -169,12 +186,16 @@ private:
     std::atomic<uint64_t> ws_last_emit_ms{0};
     std::thread         ws_thread;
 
+    // Throttling configuration for WebSocket updates
+    // Critical changes (state transitions) dispatch immediately; telemetry is throttled
+    static constexpr uint64_t STATUS_UPDATE_INTERVAL_MS = 1000;  // 1 update/sec for telemetry
+    std::atomic<uint64_t> ws_last_dispatch_ms{0};
+    std::string last_print_state;  // Track state for immediate dispatch on change
+
     // Connection thread management
-    std::atomic<bool>   connect_in_progress{false};
-    std::atomic<bool>   connect_stop_requested{false};
-    std::thread         connect_thread;
-    std::recursive_mutex connect_mutex;
-    std::condition_variable connect_cv;
+    std::atomic<uint64_t>  connect_generation{0};
+    std::thread            connect_thread;
+    std::recursive_mutex   connect_mutex;
 };
 
 } // namespace Slic3r

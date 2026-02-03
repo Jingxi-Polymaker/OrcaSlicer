@@ -1,14 +1,12 @@
 #include "BBLPrinterAgent.hpp"
 #include "BBLNetworkPlugin.hpp"
+#include "NetworkAgentFactory.hpp"
 
 #include <boost/log/trivial.hpp>
 
 namespace Slic3r {
 
-BBLPrinterAgent::BBLPrinterAgent()
-{
-    BOOST_LOG_TRIVIAL(info) << "BBLPrinterAgent: Constructor - using BBLNetworkPlugin singleton";
-}
+BBLPrinterAgent::BBLPrinterAgent() = default;
 
 BBLPrinterAgent::~BBLPrinterAgent() = default;
 
@@ -207,7 +205,7 @@ int BBLPrinterAgent::set_user_selected_machine(std::string dev_id)
 // ============================================================================
 AgentInfo BBLPrinterAgent::get_agent_info_static()
 {
-    return AgentInfo{"bbl", "Bambu Lab Printer Agent", "", "Bambu Lab printer agent"};
+    return AgentInfo{BBL_PRINTER_AGENT_ID, "Bambu Lab", "", "Bambu Lab printer agent"};
 }
 
 // ============================================================================
@@ -359,6 +357,16 @@ int BBLPrinterAgent::set_queue_on_main_fn(QueueOnMainFn fn)
         return func(agent, fn);
     }
     return -1;
+}
+
+// ============================================================================
+// Filament Operations
+// ============================================================================
+
+FilamentSyncMode BBLPrinterAgent::get_filament_sync_mode() const
+{
+    // BBL uses MQTT subscription for real-time filament updates
+    return FilamentSyncMode::subscription;
 }
 
 } // namespace Slic3r

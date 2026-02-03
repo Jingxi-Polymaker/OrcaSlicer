@@ -75,6 +75,7 @@ public:
     int set_on_local_connect_fn(OnLocalConnectedFn fn) override;
     int set_on_local_message_fn(OnMessageFn fn) override;
     int set_queue_on_main_fn(QueueOnMainFn fn) override;
+    FilamentSyncMode get_filament_sync_mode() const override;
 
 private:
     std::shared_ptr<ICloudServiceAgent> m_cloud_agent;

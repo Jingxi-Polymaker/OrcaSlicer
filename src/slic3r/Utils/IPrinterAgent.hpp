@@ -23,6 +23,20 @@ struct AgentInfo {
 };
 
 /**
+ * FilamentSyncMode - Modes for filament data synchronization.
+ *
+ * Defines how filament information is obtained from the printer:
+ * - Subscription: Real-time push updates (e.g., MQTT subscriptions)
+ * - Pull: On-demand fetch via REST API (blocking call)
+ * - None: Filament sync unavailable
+ */
+enum class FilamentSyncMode {
+    none = 0,     ///< Filament synchronization not supported
+    subscription, ///< Real-time push updates via subscription (e.g., MQTT)
+    pull          ///< On-demand fetch via REST API (blocking call)
+};
+
+/**
  * IPrinterAgent - Interface for printer operations.
  *
  * This interface encapsulates all printer-related functionality:
@@ -224,18 +238,21 @@ public:
     // Filament Operations
     // ========================================================================
     /**
-     * Returns true if this agent uses subscription-based updates (e.g., MQTT).
-     * When true, filament data is pushed in real-time and fetch_filament_info()
-     * should NOT be called. When false, data must be explicitly polled.
+     * Get the filament synchronization mode for this agent.
+     * 
+     * @return FilamentSyncMode indicating how filament data is obtained:
+     *         - subscription: Real-time push updates via MQTT (no fetch needed)
+     *         - pull: On-demand fetch via REST API (call fetch_filament_info())
+     *         - none: Filament synchronization not supported
      */
-    virtual bool is_subscription_based() const { return true; }
+    virtual FilamentSyncMode get_filament_sync_mode() const { return FilamentSyncMode::none; }
 
     /**
      * Refresh filament info from the printer synchronously.
-     * Should only be called when is_subscription_based() returns false.
+     * Should only be called when get_filament_sync_mode() returns FilamentSyncMode::pull.
      * Populates the MachineObject's DevFilaSystem with fetched filament data.
      */
-    virtual void fetch_filament_info(std::string dev_id) {}
+    virtual bool fetch_filament_info(std::string dev_id) { return false; }
 };
 
 } // namespace Slic3r

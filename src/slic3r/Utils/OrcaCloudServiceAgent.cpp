@@ -47,13 +47,13 @@ namespace pt = boost::property_tree;
 namespace Slic3r {
 
 namespace {
-constexpr const char* ORCA_DEFAULT_API_URL = "https://api.orcaslicer.com";
-constexpr const char* ORCA_DEFAULT_AUTH_URL = "https://auth.orcaslicer.com";
-constexpr const char* ORCA_DEFAULT_PUB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+constexpr const char* ORCA_DEFAULT_API_URL = "https://xxx.orcaslicer.com";
+constexpr const char* ORCA_DEFAULT_AUTH_URL = "https://xxx.orcaslicer.com";
+constexpr const char* ORCA_DEFAULT_PUB_KEY = "xxxxxxxxxxxxx";
 constexpr const char* ORCA_HEALTH_PATH = "/api/v1/health";
 constexpr const char* ORCA_SYNC_PULL_PATH = "/api/v1/sync/pull";
 constexpr const char* ORCA_SYNC_PUSH_PATH = "/api/v1/sync/push";
-constexpr const char* ORCA_PROFILES_PATH = "/api/v1/sync/profiles";
+constexpr const char* ORCA_PROFILES_PATH = "/api/v1/profiles";
 constexpr const char* ORCA_SYNC_STATE_FILE = "sync_state";
 
 constexpr const char* CONFIG_ORCA_API_URL = "orca_api_url";
@@ -332,7 +332,6 @@ OrcaCloudServiceAgent::OrcaCloudServiceAgent(std::string log_dir)
     update_redirect_uri();
     regenerate_pkce();
     compute_fallback_path();
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Constructor - log_dir=" << this->log_dir;
 }
 
 OrcaCloudServiceAgent::~OrcaCloudServiceAgent()
@@ -348,19 +347,15 @@ void OrcaCloudServiceAgent::configure_urls(AppConfig* app_config)
 
     // Read token storage preference
     m_use_encrypted_token_file = app_config->get_bool(SETTING_USE_ENCRYPTED_TOKEN_FILE);
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: token storage mode set to "
-                             << (m_use_encrypted_token_file ? "encrypted file" : "System Keychain");
 
     std::string api_url = app_config->get(CONFIG_ORCA_API_URL);
     if (!api_url.empty()) {
         api_base_url = api_url;
-        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Using custom API URL: " << api_base_url;
     }
 
     std::string auth_url = app_config->get(CONFIG_ORCA_AUTH_URL);
     if (!auth_url.empty()) {
         auth_base_url = auth_url;
-        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Using custom Auth URL: " << auth_base_url;
     }
 
     std::string pub_key = app_config->get(CONFIG_ORCA_PUB_KEY);
@@ -382,8 +377,6 @@ void OrcaCloudServiceAgent::set_auth_base_url(const std::string& url)
 void OrcaCloudServiceAgent::set_use_encrypted_token_file(bool use)
 {
     m_use_encrypted_token_file = use;
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: token storage mode set to "
-                             << (m_use_encrypted_token_file ? "encrypted file" : "System Keychain");
 }
 
 bool OrcaCloudServiceAgent::get_use_encrypted_token_file() const
@@ -397,7 +390,6 @@ bool OrcaCloudServiceAgent::get_use_encrypted_token_file() const
 
 int OrcaCloudServiceAgent::init_log()
 {
-    BOOST_LOG_TRIVIAL(debug) << "OrcaCloudServiceAgent: init_log called";
     return BAMBU_NETWORK_SUCCESS;
 }
 
@@ -407,35 +399,30 @@ int OrcaCloudServiceAgent::set_config_dir(std::string cfg_dir)
     wxFileName fallback(wxString::FromUTF8(cfg_dir.c_str()), "orca_refresh_token.sec");
     fallback.Normalize();
     refresh_fallback_path = fallback.GetFullPath().ToStdString();
-    BOOST_LOG_TRIVIAL(debug) << "OrcaCloudServiceAgent: set_config_dir - " << cfg_dir;
     return BAMBU_NETWORK_SUCCESS;
 }
 
 int OrcaCloudServiceAgent::set_cert_file(std::string folder, std::string filename)
 {
     // Not used by OrcaCloudServiceAgent (OAuth doesn't need client certs)
-    BOOST_LOG_TRIVIAL(debug) << "OrcaCloudServiceAgent: set_cert_file called (unused) - " << folder << "/" << filename;
+    (void) folder;
+    (void) filename;
     return BAMBU_NETWORK_SUCCESS;
 }
 
 int OrcaCloudServiceAgent::set_country_code(std::string code)
 {
     country_code = code;
-    BOOST_LOG_TRIVIAL(debug) << "OrcaCloudServiceAgent: set_country_code - " << code;
     return BAMBU_NETWORK_SUCCESS;
 }
 
 int OrcaCloudServiceAgent::start()
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: start called";
-
-    // Regenerate PKCE bundle for fresh login attempts
     regenerate_pkce();
 
     // Attempt silent sign-in from stored refresh token
     std::string stored_refresh;
     if (load_refresh_token(stored_refresh) && !stored_refresh.empty()) {
-        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Found stored refresh token, attempting silent sign-in";
         refresh_now(stored_refresh, "refresh token", false);
     }
 
@@ -456,7 +443,6 @@ bool OrcaCloudServiceAgent::exchange_auth_code(const std::string& auth_code, con
     }
 
     std::string url = auth_base_url + auth_constants::TOKEN_PATH;
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: exchanging auth code for tokens";
 
     std::string redirect_uri;
     std::string code_verifier;
@@ -533,8 +519,6 @@ bool OrcaCloudServiceAgent::exchange_auth_code(const std::string& auth_code, con
 
 int OrcaCloudServiceAgent::change_user(std::string user_info)
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: change_user invoked";
-
     try {
         std::stringstream ss(user_info);
         pt::ptree tree;
@@ -547,7 +531,6 @@ int OrcaCloudServiceAgent::change_user(std::string user_info)
         // Check if this is a WebView login message (PKCE flow completion)
         std::string command = tree.get<std::string>("command", "");
         if (command == "user_login") {
-            BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Detected WebView login message";
 
             auto data_opt = tree.get_child_optional("data");
             if (!data_opt) {
@@ -562,7 +545,6 @@ int OrcaCloudServiceAgent::change_user(std::string user_info)
             // Check for auth code (PKCE authorization code flow)
             std::string auth_code = read_str(data, "code");
             if (!auth_code.empty()) {
-                BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Detected auth code, exchanging for tokens";
                 std::string session_payload;
                 if (!exchange_auth_code(auth_code, state, session_payload)) {
                     invoke_user_login_callback(0, false);
@@ -652,7 +634,6 @@ int OrcaCloudServiceAgent::change_user(std::string user_info)
                 return BAMBU_NETWORK_ERR_INVALID_HANDLE;
             }
 
-            BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Orca cloud login successful - user_id=" << user_id;
             bool success = set_user_session(access_token, user_id, username, name, nickname, avatar, refresh_token);
             if (success) {
                 invoke_user_login_callback(1, true);
@@ -662,8 +643,6 @@ int OrcaCloudServiceAgent::change_user(std::string user_info)
             } else {
                 invoke_user_login_callback(0, false);
             }
-            BOOST_LOG_TRIVIAL(info) << "[auth] event=login result=" << (success ? "success" : "failure")
-                                    << " source=session user_id=" << user_id;
             return success ? BAMBU_NETWORK_SUCCESS : BAMBU_NETWORK_ERR_INVALID_HANDLE;
         }
 
@@ -686,7 +665,6 @@ bool OrcaCloudServiceAgent::is_user_login()
 
 int OrcaCloudServiceAgent::user_logout(bool request)
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: user_logout - request=" << request;
 
     // Send logout request to backend if requested
     if (request) {
@@ -719,14 +697,8 @@ int OrcaCloudServiceAgent::user_logout(bool request)
         }
     }
 
-    // Clear session
     clear_session();
-
-    // Invoke callback
     invoke_user_login_callback(0, false);
-
-    BOOST_LOG_TRIVIAL(info) << "[auth] event=logout result=success request=" << request;
-
     return BAMBU_NETWORK_SUCCESS;
 }
 
@@ -871,8 +843,6 @@ bool OrcaCloudServiceAgent::ensure_token_fresh(const std::string& reason)
 
 int OrcaCloudServiceAgent::connect_server()
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: connect_server";
-
     std::string response;
     unsigned int http_code = 0;
     int result = http_get(ORCA_HEALTH_PATH, &response, &http_code);
@@ -884,8 +854,6 @@ int OrcaCloudServiceAgent::connect_server()
     }
 
     invoke_server_connected_callback(connected ? 0 : -1, http_code);
-
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: connect_server result=" << (connected ? "connected" : "failed");
     return connected ? BAMBU_NETWORK_SUCCESS : BAMBU_NETWORK_ERR_CONNECTION_TO_SERVER_FAILED;
 }
 
@@ -902,25 +870,25 @@ int OrcaCloudServiceAgent::refresh_connection()
 
 int OrcaCloudServiceAgent::start_subscribe(std::string module)
 {
-    BOOST_LOG_TRIVIAL(debug) << "OrcaCloudServiceAgent: start_subscribe - " << module << " (stub)";
+    (void) module;
     return BAMBU_NETWORK_SUCCESS;
 }
 
 int OrcaCloudServiceAgent::stop_subscribe(std::string module)
 {
-    BOOST_LOG_TRIVIAL(debug) << "OrcaCloudServiceAgent: stop_subscribe - " << module << " (stub)";
+    (void) module;
     return BAMBU_NETWORK_SUCCESS;
 }
 
 int OrcaCloudServiceAgent::add_subscribe(std::vector<std::string> dev_list)
 {
-    BOOST_LOG_TRIVIAL(debug) << "OrcaCloudServiceAgent: add_subscribe (stub)";
+    (void) dev_list;
     return BAMBU_NETWORK_SUCCESS;
 }
 
 int OrcaCloudServiceAgent::del_subscribe(std::vector<std::string> dev_list)
 {
-    BOOST_LOG_TRIVIAL(debug) << "OrcaCloudServiceAgent: del_subscribe (stub)";
+    (void) dev_list;
     return BAMBU_NETWORK_SUCCESS;
 }
 
@@ -936,8 +904,6 @@ void OrcaCloudServiceAgent::enable_multi_machine(bool enable)
 
 int OrcaCloudServiceAgent::get_user_presets(std::map<std::string, std::map<std::string, std::string>>* user_presets)
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: get_user_presets";
-
     if (!user_presets) return BAMBU_NETWORK_ERR_INVALID_HANDLE;
 
     if (!is_user_login()) {
@@ -957,42 +923,13 @@ int OrcaCloudServiceAgent::get_user_presets(std::map<std::string, std::map<std::
     }
 
     auto on_success = [&](const SyncPullResponse& resp) {
-        // Get current user_id for all presets (required by load_user_preset)
-        std::string current_user_id = get_user_id();
-
         for (const auto& upsert : resp.upserts) {
-            // Parse JSON content into key-value pairs using helper
-            std::map<std::string, std::string> value_map;
-            json_to_map(upsert.content.dump(), value_map);
-
-            // Add metadata from top-level sync response if not already in content
-            // These are required by PresetCollection::load_user_preset
-            if (value_map.find(BBL_JSON_KEY_SETTING_ID) == value_map.end()) {
-                value_map[BBL_JSON_KEY_SETTING_ID] = upsert.id;
-            }
-            if (value_map.find(BBL_JSON_KEY_USER_ID) == value_map.end()) {
-                value_map[BBL_JSON_KEY_USER_ID] = current_user_id;
-            }
-            if (value_map.find(ORCA_JSON_KEY_UPDATE_TIME) == value_map.end()) {
-                value_map[ORCA_JSON_KEY_UPDATE_TIME] = upsert.updated_time;
+            std::string preset_type = IOT_PRINT_TYPE_STRING;
+            if (upsert.content.contains("type") && upsert.content["type"].is_string()) {
+                preset_type = upsert.content["type"].get<std::string>();
             }
 
-            // Use preset name from content or fallback to upsert.name or upsert.id
-            std::string preset_name = upsert.content.value(BBL_JSON_KEY_NAME, "");
-            if (preset_name.empty()) {
-                preset_name = upsert.name.empty() ? upsert.id : upsert.name;
-            }
-
-            // Store as: user_presets[preset_name][key] = value
-            // This matches the format expected by PresetBundle::load_user_presets
-            (*user_presets)[preset_name] = value_map;
-
-            // OLD CODE (incorrect format - kept for reference):
-            // std::string preset_type = IOT_PRINT_TYPE_STRING;
-            // if (upsert.content.contains("type") && upsert.content["type"].is_string()) {
-            //     preset_type = upsert.content["type"].get<std::string>();
-            // }
-            // (*user_presets)[preset_type][upsert.id] = upsert.content.dump();
+            (*user_presets)[preset_type][upsert.id] = upsert.content.dump();
         }
 
         if (!resp.next_cursor.empty()) {
@@ -1024,8 +961,6 @@ int OrcaCloudServiceAgent::get_user_presets(std::map<std::string, std::map<std::
 
 std::string OrcaCloudServiceAgent::request_setting_id(std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code)
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: request_setting_id - " << name;
-
     std::string new_id = generate_uuid(name);
     if (new_id.empty()) {
         BOOST_LOG_TRIVIAL(error) << "OrcaCloudServiceAgent: request_setting_id failed - name is empty";
@@ -1044,17 +979,14 @@ std::string OrcaCloudServiceAgent::request_setting_id(std::string name, std::map
         }
     }
 
-    // Use sync_push to create the profile (no original_updated_time for new profiles per spec)
+    // Use sync_push to create the profile (no original_updated_at for new profiles per spec)
     auto result = sync_push(new_id, name, content, "");
     if (http_code) *http_code = result.http_code;
 
     if (result.success) {
-        // Return new_updated_time via values_map so caller can store it in Preset::updated_time
-        if (values_map && !result.new_updated_time.empty()) {
-            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.new_updated_time;
+        if (values_map && !result.new_updated_at.empty()) {
+            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.new_updated_at;
         }
-        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Created preset - setting_id=" << new_id
-                                << ", new_updated_time=" << result.new_updated_time;
         return new_id;
     }
 
@@ -1064,15 +996,14 @@ std::string OrcaCloudServiceAgent::request_setting_id(std::string name, std::map
 
 int OrcaCloudServiceAgent::put_setting(std::string setting_id, std::string name, std::map<std::string, std::string>* values_map, unsigned int* http_code)
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: put_setting - setting_id=" << setting_id << ", name=" << name;
-
-    // Extract original_updated_time for Optimistic Concurrency Control (per spec section 5.2)
+    // Extract original_updated_at for Optimistic Concurrency Control
     // If present, server will verify version before update. If absent, treated as insert.
-    std::string original_updated_time;
+    // If present, server will verify version before update. If absent, treated as insert.
+    std::string original_updated_at;
     if (values_map) {
         auto it = values_map->find(IOT_JSON_KEY_UPDATED_TIME);
         if (it != values_map->end()) {
-            original_updated_time = it->second;
+            original_updated_at = it->second;
         }
     }
 
@@ -1088,25 +1019,23 @@ int OrcaCloudServiceAgent::put_setting(std::string setting_id, std::string name,
         }
     }
 
-    auto result = sync_push(setting_id, name, content, original_updated_time);
+    auto result = sync_push(setting_id, name, content, original_updated_at);
     if (http_code) *http_code = result.http_code;
 
     if (result.success) {
-        if (values_map && !result.new_updated_time.empty()) {
-            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.new_updated_time;
+        if (values_map && !result.new_updated_at.empty()) {
+            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.new_updated_at;
         }
-        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: Updated preset - setting_id=" << setting_id
-                                << ", new_updated_time=" << result.new_updated_time;
         return BAMBU_NETWORK_SUCCESS;
     }
 
     if (result.http_code == 409) {
         // Conflict - update values_map with server version
-        if (values_map && !result.server_version.updated_time.empty()) {
-            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.server_version.updated_time;
+        if (values_map && !result.server_version.updated_at.empty()) {
+            (*values_map)[IOT_JSON_KEY_UPDATED_TIME] = result.server_version.updated_at;
         }
-        BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: put_setting conflict - server_updated_time="
-                                   << result.server_version.updated_time;
+        BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: put_setting conflict - server_updated_at="
+                                   << result.server_version.updated_at;
     }
 
     BOOST_LOG_TRIVIAL(error) << "OrcaCloudServiceAgent: put_setting failed - " << result.error_message;
@@ -1120,8 +1049,7 @@ int OrcaCloudServiceAgent::get_setting_list(std::string bundle_version, Progress
 
 int OrcaCloudServiceAgent::get_setting_list2(std::string bundle_version, CheckFn chk_fn, ProgressFn pro_fn, WasCancelledFn cancel_fn)
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: get_setting_list2 - bundle_version=" << bundle_version;
-
+    (void) bundle_version;
     bool success = false;
     int error_code = 0;
 
@@ -1132,7 +1060,6 @@ int OrcaCloudServiceAgent::get_setting_list2(std::string bundle_version, CheckFn
 
         for (const auto& upsert : resp.upserts) {
             if (cancel_fn && cancel_fn()) {
-                BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: get_setting_list2 cancelled";
                 cancelled = true;
                 break;
             }
@@ -1140,7 +1067,7 @@ int OrcaCloudServiceAgent::get_setting_list2(std::string bundle_version, CheckFn
             if (chk_fn) {
                 std::map<std::string, std::string> info;
                 info[IOT_JSON_KEY_SETTING_ID] = upsert.id;
-                info[IOT_JSON_KEY_UPDATED_TIME] = upsert.updated_time;
+                info[IOT_JSON_KEY_UPDATED_TIME] = upsert.updated_at;
 
                 if (upsert.content.is_object()) {
                     for (auto& [key, value] : upsert.content.items()) {
@@ -1173,7 +1100,6 @@ int OrcaCloudServiceAgent::get_setting_list2(std::string bundle_version, CheckFn
         if (!cancelled) {
             for (const auto& deleted_id : resp.deletes) {
                 if (cancel_fn && cancel_fn()) {
-                    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: get_setting_list2 cancelled";
                     cancelled = true;
                     break;
                 }
@@ -1219,8 +1145,6 @@ int OrcaCloudServiceAgent::get_setting_list2(std::string bundle_version, CheckFn
 
 int OrcaCloudServiceAgent::delete_setting(std::string setting_id)
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: delete_setting - " << setting_id;
-
     std::string path = std::string(ORCA_PROFILES_PATH) + "/" + setting_id;
     std::string response;
     unsigned int http_code = 0;
@@ -1241,11 +1165,9 @@ int OrcaCloudServiceAgent::sync_pull(
     std::function<void(const SyncPullResponse&)> on_success,
     std::function<void(int http_code, const std::string& error)> on_error)
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: sync_pull";
-
     std::string path = ORCA_SYNC_PULL_PATH;
     if (!sync_state.last_sync_timestamp.empty()) {
-        path += "?cursor=" + Http::url_encode(sync_state.last_sync_timestamp);
+        path += "?cursor=" + sync_state.last_sync_timestamp;
     }
 
     std::string response;
@@ -1267,9 +1189,7 @@ int OrcaCloudServiceAgent::sync_pull(
         return BAMBU_NETWORK_ERR_GET_SETTING_LIST_FAILED;
     }
 
-    // Handle 304 Not Modified - no changes
     if (http_code == 304) {
-        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: sync_pull - no changes (304)";
         if (on_success) {
             SyncPullResponse empty_response;
             on_success(empty_response);
@@ -1287,8 +1207,8 @@ int OrcaCloudServiceAgent::sync_pull(
                 ProfileUpsert upsert;
                 upsert.id = item.value("id", "");
                 upsert.name = item.value("name", "");
-                upsert.updated_time = item.value(ORCA_JSON_KEY_UPDATE_TIME, "");
-                upsert.created_time = item.value(ORCA_JSON_KEY_CREATED_TIME, "");
+                upsert.updated_at = item.value(ORCA_JSON_KEY_UPDATE_TIME, "");
+                upsert.created_at = item.value(ORCA_JSON_KEY_CREATED_TIME, "");
                 if (item.contains("content")) {
                     upsert.content = item["content"];
                 }
@@ -1316,10 +1236,8 @@ SyncPushResult OrcaCloudServiceAgent::sync_push(
     const std::string& profile_id,
     const std::string& name,
     const nlohmann::json& content,
-    const std::string& original_updated_time)
+    const std::string& original_updated_at)
 {
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: sync_push - " << profile_id;
-
     SyncPushResult result;
     result.success = false;
     result.http_code = 0;
@@ -1329,8 +1247,8 @@ SyncPushResult OrcaCloudServiceAgent::sync_push(
     body["id"] = profile_id;
     body["name"] = name;
     body["content"] = content;
-    if (!original_updated_time.empty()) {
-        body["original_updated_time"] = original_updated_time;
+    if (!original_updated_at.empty()) {
+        body["original_updated_at"] = original_updated_at;
     }
 
     std::string response;
@@ -1353,7 +1271,7 @@ SyncPushResult OrcaCloudServiceAgent::sync_push(
             } else {
                 result.server_version.id = json.value("id", "");
                 result.server_version.name = json.value("name", "");
-                result.server_version.updated_time = json.value(ORCA_JSON_KEY_UPDATE_TIME, "");
+                result.server_version.updated_at = json.value(ORCA_JSON_KEY_UPDATE_TIME, "");
             }
         } catch (...) {}
         result.error_message = response;
@@ -1368,11 +1286,11 @@ SyncPushResult OrcaCloudServiceAgent::sync_push(
     // Success
     try {
         auto json = nlohmann::json::parse(response);
-        result.new_updated_time = json.value(ORCA_JSON_KEY_UPDATE_TIME, "");
-        if (!result.new_updated_time.empty()) {
+        result.new_updated_at = json.value(ORCA_JSON_KEY_UPDATE_TIME, "");
+        if (!result.new_updated_at.empty()) {
             result.success = true;
         } else {
-            result.error_message = "Server response missing required updated_time timestamp";
+            result.error_message = "Server response missing required updated_at timestamp";
         }
     } catch (const std::exception& e) {
         result.error_message = e.what();
@@ -1458,15 +1376,11 @@ void OrcaCloudServiceAgent::regenerate_pkce()
     if (pkce_bundle.redirect.empty()) {
         pkce_bundle.redirect = "http://localhost:" + std::to_string(pkce_bundle.loopback_port) + auth_constants::LOOPBACK_PATH;
     }
-    BOOST_LOG_TRIVIAL(debug) << "OrcaCloudServiceAgent: regenerated PKCE bundle";
 }
 
 void OrcaCloudServiceAgent::update_redirect_uri()
 {
     int selected_port = choose_loopback_port();
-    if (selected_port != pkce_bundle.loopback_port) {
-        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: loopback port changed to " << selected_port;
-    }
     pkce_bundle.loopback_port = selected_port;
     pkce_bundle.redirect = "http://localhost:" + std::to_string(selected_port) + auth_constants::LOOPBACK_PATH;
 }
@@ -1541,15 +1455,12 @@ void OrcaCloudServiceAgent::persist_refresh_token(const std::string& token)
         }
     }
 
-    if (stored) {
-        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: refresh token persisted successfully";
-    }
+    (void) stored;
 }
 
 bool OrcaCloudServiceAgent::load_refresh_token(std::string& out_token)
 {
     out_token.clear();
-    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: load_refresh_token called";
 
     if (m_use_encrypted_token_file) {
         // Load from encrypted file only
@@ -1584,11 +1495,8 @@ bool OrcaCloudServiceAgent::load_refresh_token(std::string& out_token)
 
                 if (integrity_ok && aes256gcm_decrypt(encoded_payload, key, plain) && !plain.empty()) {
                     out_token = plain;
-                    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: loaded refresh token from encrypted file";
-
                     // Upgrade legacy payloads to signed format
                     if (payload.rfind("v2:", 0) != 0) {
-                        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: upgrading legacy token format to v2";
                         persist_refresh_token(out_token);
                     }
                     return true;
@@ -1596,23 +1504,16 @@ bool OrcaCloudServiceAgent::load_refresh_token(std::string& out_token)
             }
         }
     } else {
-        // Load from wxSecretStore only
         wxSecretStore store = wxSecretStore::GetDefault();
         if (store.IsOk()) {
-            BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: System Keychain is available, attempting load";
             wxString username;
             wxSecretValue secret;
             if (store.Load(SECRET_STORE_SERVICE, username, secret) && secret.IsOk()) {
                 out_token.assign(static_cast<const char*>(secret.GetData()), secret.GetSize());
                 if (!out_token.empty()) {
-                    BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: loaded refresh token from System Keychain";
                     return true;
                 }
-            } else {
-                BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: System Keychain load failed or data is invalid";
             }
-        } else {
-            BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: System Keychain is NOT available";
         }
     }
 
@@ -1685,14 +1586,8 @@ bool OrcaCloudServiceAgent::refresh_now(const std::string& refresh_token, const 
     }
 
     auto worker = [this, refresh_token, reason]() {
-        const std::string req_id = generate_state_token();
-        BOOST_LOG_TRIVIAL(info) << "[auth] event=refresh_start source=" << reason << " rid=" << req_id;
+        (void) reason;
         bool ok = refresh_session_with_token(refresh_token);
-        if (ok) {
-            BOOST_LOG_TRIVIAL(info) << "[auth] event=refresh_complete result=success source=" << reason << " rid=" << req_id;
-        } else {
-            BOOST_LOG_TRIVIAL(warning) << "[auth] event=refresh_complete result=failure source=" << reason << " rid=" << req_id;
-        }
         refresh_running.store(false);
         return ok;
     };
@@ -1741,10 +1636,7 @@ bool OrcaCloudServiceAgent::refresh_if_expiring(std::chrono::seconds skew, const
 bool OrcaCloudServiceAgent::refresh_session_with_token(const std::string& refresh_token)
 {
     std::string body = "{\"refresh_token\":\"" + refresh_token + "\"}";
-
     std::string url = auth_base_url + auth_constants::TOKEN_PATH + "?grant_type=refresh_token";
-    BOOST_LOG_TRIVIAL(debug) << "OrcaCloudServiceAgent: refresh request - token_length=" << refresh_token.size() << ", url=" << url;
-
     std::string  response;
     unsigned int http_code = 0;
     if (!http_post_token(body, &response, &http_code, url) || http_code >= 400) {
@@ -1793,7 +1685,6 @@ bool OrcaCloudServiceAgent::refresh_session_with_token(const std::string& refres
             return false;
         }
 
-        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: token refresh successful - user_id=" << user_id;
         bool success = set_user_session(access_token, user_id, username, name, nickname, avatar, new_refresh_token);
         if (success) {
             invoke_user_login_callback(0, true);
@@ -1803,8 +1694,6 @@ bool OrcaCloudServiceAgent::refresh_session_with_token(const std::string& refres
         } else {
             invoke_user_login_callback(0, false);
         }
-        BOOST_LOG_TRIVIAL(info) << "[auth] event=token_refresh result=" << (success ? "success" : "failure")
-                                << " user_id=" << user_id;
         return success;
 
     } catch (const std::exception& e) {

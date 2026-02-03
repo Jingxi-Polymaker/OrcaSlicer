@@ -313,13 +313,8 @@ namespace Slic3r
                 //load access code
                 AppConfig* config = Slic3r::GUI::wxGetApp().app_config;
                 if (config) {
-                    std::string loaded_access_code = Slic3r::GUI::wxGetApp().app_config->get("access_code", dev_id);
-                    std::string loaded_user_access_code = Slic3r::GUI::wxGetApp().app_config->get("user_access_code", dev_id);
-                    obj->set_access_code(loaded_access_code, false);
-                    obj->set_user_access_code(loaded_user_access_code, false);
-                    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Loaded access codes for dev_id=" << dev_id
-                        << " access_code=" << loaded_access_code
-                        << " user_access_code=" << loaded_user_access_code;
+                    obj->set_access_code(Slic3r::GUI::wxGetApp().app_config->get("access_code", dev_id), false);
+                    obj->set_user_access_code(Slic3r::GUI::wxGetApp().app_config->get("user_access_code", dev_id), false);
                 }
                 localMachineList.insert(std::make_pair(dev_id, obj));
 
@@ -520,17 +515,12 @@ namespace Slic3r
                         m_agent->disconnect_printer();
                         it->second->reset();
 
-                        // Only attempt to connect if the printer agent is ready
-                        if (m_agent->get_printer_agent()) {
 #if !BBL_RELEASE_TO_PUBLIC
-                            it->second->connect(Slic3r::GUI::wxGetApp().app_config->get("enable_ssl_for_mqtt") == "true" ? true : false);
+                        it->second->connect(Slic3r::GUI::wxGetApp().app_config->get("enable_ssl_for_mqtt") == "true" ? true : false);
 #else
-                            it->second->connect(it->second->local_use_ssl_for_mqtt);
+                        it->second->connect(it->second->local_use_ssl);
 #endif
-                            it->second->set_lan_mode_connection_state(true);
-                        } else {
-                            BOOST_LOG_TRIVIAL(info) << "set_selected_machine: printer agent not ready, deferring reconnection for dev_id=" << dev_id;
-                        }
+                        it->second->set_lan_mode_connection_state(true);
                     }
                 }
             }
@@ -549,19 +539,12 @@ namespace Slic3r
                     {
                         BOOST_LOG_TRIVIAL(info) << "set_selected_machine: select new lan machine, dev_id =" << dev_id;
                         it->second->reset();
-                        // Only attempt to connect if the printer agent is ready
-                        // If not ready, just select the machine - connection will happen later
-                        // when the agent is set and announce_printhost_device() is called
-                        if (m_agent->get_printer_agent()) {
 #if !BBL_RELEASE_TO_PUBLIC
-                            it->second->connect(Slic3r::GUI::wxGetApp().app_config->get("enable_ssl_for_mqtt") == "true" ? true : false);
+                        it->second->connect(Slic3r::GUI::wxGetApp().app_config->get("enable_ssl_for_mqtt") == "true" ? true : false);
 #else
-                            it->second->connect(it->second->local_use_ssl_for_mqtt);
+                        it->second->connect(it->second->local_use_ssl);
 #endif
-                            it->second->set_lan_mode_connection_state(true);
-                        } else {
-                            BOOST_LOG_TRIVIAL(info) << "set_selected_machine: printer agent not ready, deferring connection for dev_id=" << dev_id;
-                        }
+                        it->second->set_lan_mode_connection_state(true);
                     }
                 }
             }
@@ -666,29 +649,15 @@ namespace Slic3r
 
         for (auto it = localMachineList.begin(); it != localMachineList.end(); it++)
         {
-            if (it->second) {
-                bool has_access = it->second->has_access_right();
-                bool is_avail = it->second->is_avaliable();
-                bool is_lan = it->second->is_lan_mode_printer();
-                BOOST_LOG_TRIVIAL(info) << "get_my_machine_list: checking local machine dev_id=" << it->first
-                                        << " has_access_right=" << has_access
-                                        << " is_avaliable=" << is_avail
-                                        << " is_lan_mode=" << is_lan
-                                        << " access_code=" << it->second->get_access_code()
-                                        << " bind_state=" << it->second->bind_state
-                                        << " dev_connection_type=" << it->second->dev_connection_type;
-                if (has_access && is_avail && is_lan)
+            if (it->second && it->second->has_access_right() && it->second->is_avaliable() && it->second->is_lan_mode_printer())
+            {
+                // remove redundant in userMachineList
+                if (result.find(it->first) == result.end())
                 {
-                    // remove redundant in userMachineList
-                    if (result.find(it->first) == result.end())
-                    {
-                        result.emplace(std::make_pair(it->first, it->second));
-                        BOOST_LOG_TRIVIAL(info) << "get_my_machine_list: added local machine " << it->first;
-                    }
+                    result.emplace(std::make_pair(it->first, it->second));
                 }
             }
         }
-        BOOST_LOG_TRIVIAL(info) << "get_my_machine_list: returning " << result.size() << " machines";
         return result;
     }
 
@@ -853,19 +822,13 @@ namespace Slic3r
 
     void DeviceManager::load_last_machine()
     {
-        BOOST_LOG_TRIVIAL(info) << "DeviceManager::load_last_machine() called";
-
         // Get all available machines, include cloud machines and lan machines that have access right
         auto all_machines = get_my_machine_list();
-        BOOST_LOG_TRIVIAL(info) << "load_last_machine: all_machines.size()=" << all_machines.size();
-        if (all_machines.empty()) {
-            BOOST_LOG_TRIVIAL(info) << "load_last_machine: no machines available, returning";
+        if (all_machines.empty())
             return;
-        }
-
+        
         // Then connect to the machine we last selected if available
         const std::string last_monitor_machine = m_agent ? m_agent->get_user_selected_machine() : "";
-        BOOST_LOG_TRIVIAL(info) << "load_last_machine: last_monitor_machine=" << last_monitor_machine;
         const auto        last_machine         = all_machines.find(last_monitor_machine);
         if (last_machine != all_machines.end()) {
             this->set_selected_machine(last_machine->second->get_dev_id());
@@ -895,7 +858,10 @@ namespace Slic3r
     {
         if (MachineObject* obj_ = get_selected_machine()) {
             GUI::wxGetApp().sidebar().update_sync_status(obj_);
-            GUI::wxGetApp().sidebar().load_ams_list(obj_);
+            if(m_agent->get_filament_sync_mode() == FilamentSyncMode::subscription)
+            {
+                GUI::wxGetApp().sidebar().load_ams_list(obj_);
+            }
         };
     }
 

@@ -172,24 +172,16 @@ void PhysicalPrinterDialog::build_printhost_settings(ConfigOptionsGroup* m_optgr
                 def.enum_labels.push_back(agent.display_name);
             }
 
-            // Set initial selection based on current config value or default
-            const std::string current_agent  = m_config->opt_string("printer_agent");
-            std::string       selected_agent = current_agent;
-
-            if (selected_agent.empty()) {
-                selected_agent = NetworkAgentFactory::get_default_printer_agent_id();
-            }
-
-            // Verify selected agent is valid
+            // Resolve selected agent: use config value if valid, otherwise fall back to default
+            std::string selected_agent = m_config->opt_string("printer_agent");
             auto it = std::find_if(agents.begin(), agents.end(), [&selected_agent](const auto& a) { return a.id == selected_agent; });
             if (it == agents.end()) {
-                selected_agent = NetworkAgentFactory::get_default_printer_agent_id();
+                selected_agent = ORCA_PRINTER_AGENT_ID;
+                it = std::find_if(agents.begin(), agents.end(), [&selected_agent](const auto& a) { return a.id == selected_agent; });
             }
 
-            // Set default value for the enum (using the index)
-            auto def_it = std::find_if(agents.begin(), agents.end(), [&selected_agent](const auto& a) { return a.id == selected_agent; });
-            if (def_it != agents.end()) {
-                size_t default_idx = std::distance(agents.begin(), def_it);
+            if (it != agents.end()) {
+                size_t default_idx = std::distance(agents.begin(), it);
                 def.set_default_value(new ConfigOptionInt(static_cast<int>(default_idx)));
             }
 
@@ -828,8 +820,13 @@ void PhysicalPrinterDialog::check_host_key_valid()
 
 void PhysicalPrinterDialog::OnOK(wxEvent& event)
 {
-    wxGetApp().get_tab(Preset::TYPE_PRINTER)->save_preset("", false, false, true, m_preset_name );
+    wxGetApp().get_tab(Preset::TYPE_PRINTER)->save_preset("", false, false, true, m_preset_name);
     event.Skip();
+
+    // Defer printer agent switch to ensure preset save completes first
+    wxGetApp().CallAfter([] {
+        wxGetApp().switch_printer_agent();
+    });
 }
 
 }}    // namespace Slic3r::GUI

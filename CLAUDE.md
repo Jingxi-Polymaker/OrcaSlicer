@@ -2,9 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## **Always** check if PROJ_AGENTS.md file exists, if it does, read it to learn the current task that is being worked on.
-## **Always** when writing markdown files, always use Obsidian Markdown flavor. use Obsidian skills
-
 ## Overview
 
 OrcaSlicer is an open-source 3D slicer application forked from Bambu Studio, built using C++ with wxWidgets for the GUI and CMake as the build system. The project uses a modular architecture with separate libraries for core slicing functionality, GUI components, and platform-specific code.
@@ -12,37 +9,43 @@ OrcaSlicer is an open-source 3D slicer application forked from Bambu Studio, bui
 ## Build Commands
 
 ### Building on Windows
+**Always use this command to build the project when testing build issues on Windows.**
 ```bash
-# Build everything
-
-# Build only dependencies
-build_release_vs2022.bat deps
-
-# Build only slicer, you should always use this command to build the project when testing build issues.
 cmake --build . --config %build_type% --target ALL_BUILD -- -m
-
-
 ```
 
 ### Building on macOS
+**Always use this command to build the project when testing build issues on macOS.**
 ```bash
-# Build only dependencies
-./build_release_macos.sh -d
-
-# Build only slicer, you should always use this command to build the project when testing build issues.
 cmake --build build/arm64 --config RelWithDebInfo --target all --
-
 ```
 
 ### Building on Linux
+ **Always use this command to build the project when testing build issues on Linux.**
 ```bash
-# Individual options:
-./build_linux.sh -d    # dependencies only
-
-# Build only slicer, you should always use this command to build the project when testing build issues.
 cmake --build build/arm64 --config RelWithDebInfo --target all --
 
 ```
+### Build test:
+
+**Always use this command to build the project when testing build issues on Windows.**
+```bash
+cmake --build . --config %build_type% --target ALL_BUILD -- -m
+```
+
+### Building on macOS
+**Always use this command to build the project when testing build issues on macOS.**
+```bash
+cmake --build build/arm64 --config RelWithDebInfo --target all --
+```
+
+### Building on Linux
+ **Always use this command to build the project when testing build issues on Linux.**
+```bash
+cmake --build build/arm64 --config RelWithDebInfo --target all --
+
+```
+
 
 ### Build System
 - Uses CMake with minimum version 3.13 (maximum 3.31.x on Windows)

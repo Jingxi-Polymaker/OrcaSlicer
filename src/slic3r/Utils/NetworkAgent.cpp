@@ -114,16 +114,10 @@ NetworkAgent::NetworkAgent(std::string log_dir)
             plugin.create_agent(log_dir);
         }
 
-        // Create BBL sub-agents that will use the singleton
         m_cloud_agent = std::make_shared<BBLCloudServiceAgent>();
         m_printer_agent = std::make_shared<BBLPrinterAgent>();
         m_printer_agent->set_cloud_agent(m_cloud_agent);
         m_printer_agent_id = m_printer_agent->get_agent_info().id;
-
-        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", this %1%, agent=%2%, log_dir=%3%")
-            % this % plugin.get_agent() % log_dir;
-    } else {
-        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": BBL network plugin not loaded";
     }
 }
 
@@ -132,17 +126,12 @@ NetworkAgent::NetworkAgent(std::shared_ptr<ICloudServiceAgent> cloud_agent,
     : m_cloud_agent(std::move(cloud_agent))
     , m_printer_agent(std::move(printer_agent))
 {
-    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(
-        ", sub-agent composition mode: cloud=%1%, printer=%2%")
-        % (m_cloud_agent ? "yes" : "no")
-        % (m_printer_agent ? "yes" : "no (will be set when printer selected)");
 }
 
 NetworkAgent::~NetworkAgent()
 {
     // Note: We don't destroy the agent here anymore since it's managed by BBLNetworkPlugin singleton
     // The singleton manages the agent lifecycle
-    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", this %1%") % this;
 }
 
 void NetworkAgent::set_printer_agent(std::shared_ptr<IPrinterAgent> printer_agent)
@@ -150,6 +139,7 @@ void NetworkAgent::set_printer_agent(std::shared_ptr<IPrinterAgent> printer_agen
     // Local copies to allow safe access after releasing the lock.
     // This pattern ensures the objects stay alive (via shared_ptr refcount) even if
     // another thread modifies m_printer_agent or m_printer_callbacks after we unlock.
+    std::shared_ptr<IPrinterAgent> old_printer_agent;
     std::shared_ptr<IPrinterAgent> new_printer_agent;
     PrinterCallbacks callbacks;
 
@@ -158,12 +148,13 @@ void NetworkAgent::set_printer_agent(std::shared_ptr<IPrinterAgent> printer_agen
         std::lock_guard<std::mutex> lock(m_agent_mutex);
 
         if (!printer_agent) {
-            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": null printer agent provided";
             return;
         }
 
         // Disconnect all callbacks from the old agent
         apply_printer_callbacks(m_printer_agent, callbacks);
+        // Capture the old agent before overwriting so we can disconnect it outside the lock
+        old_printer_agent = m_printer_agent;
         // Take ownership of the incoming agent and update the agent ID
         m_printer_agent = std::move(printer_agent);
         m_printer_agent_id = m_printer_agent->get_agent_info().id;
@@ -176,12 +167,15 @@ void NetworkAgent::set_printer_agent(std::shared_ptr<IPrinterAgent> printer_agen
     }
     // Lock released here - m_agent_mutex is now free for other threads
 
+    // Disconnect the old agent's connections/threads. The cache keeps it alive,
+    // but we release its network resources while it's not the active agent.
+    if (old_printer_agent && old_printer_agent != new_printer_agent)
+        old_printer_agent->disconnect_printer();
+
     // Apply callbacks OUTSIDE the lock to avoid deadlock risk and minimize
     // critical section duration. The local shared_ptr copy ensures the agent
     // cannot be destroyed while we're using it.
     apply_printer_callbacks(new_printer_agent, callbacks);
-
-    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": agent switched successfully";
 }
 
 void* NetworkAgent::get_network_agent()
@@ -605,17 +599,18 @@ int NetworkAgent::start_sdcard_print(PrintParams params, OnUpdateStatusFn update
     return -1;
 }
 
-bool NetworkAgent::is_subscription_based() const
+FilamentSyncMode NetworkAgent::get_filament_sync_mode() const
 {
-    if (m_printer_agent) return m_printer_agent->is_subscription_based();
-    return true;  // Default to subscription-based (safe default)
+    if (m_printer_agent) return m_printer_agent->get_filament_sync_mode();
+    return FilamentSyncMode::none;  // Default when no agent
 }
 
-void NetworkAgent::fetch_filament_info(std::string dev_id)
+bool NetworkAgent::fetch_filament_info(std::string dev_id)
 {
     if (m_printer_agent) {
-        m_printer_agent->fetch_filament_info(dev_id);
+        return m_printer_agent->fetch_filament_info(dev_id);
     }
+    return false;
 }
 
 int NetworkAgent::get_user_presets(std::map<std::string, std::map<std::string, std::string>>* user_presets)

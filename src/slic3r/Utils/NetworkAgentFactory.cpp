@@ -4,8 +4,11 @@
 #include "BBLPrinterAgent.hpp"
 #include "OrcaPrinterAgent.hpp"
 #include "QidiPrinterAgent.hpp"
+#include "SnapmakerPrinterAgent.hpp"
 #include "MoonrakerPrinterAgent.hpp"
 #include <boost/log/trivial.hpp>
+#include <map>
+#include <mutex>
 
 namespace Slic3r {
 namespace {
@@ -18,10 +21,28 @@ std::map<std::string, PrinterAgentInfo>& get_printer_agents()
     return agents;
 }
 
-std::string& get_default_agent_id()
+std::map<std::string, std::shared_ptr<IPrinterAgent>>& get_printer_agent_cache()
 {
-    static std::string default_id;
-    return default_id;
+    static std::map<std::string, std::shared_ptr<IPrinterAgent>> cache;
+    return cache;
+}
+
+// Helper to register a printer agent type with the standard factory pattern.
+// AgentTypes that take a log_dir constructor arg use the default; BBLPrinterAgent
+// (no log_dir) is registered separately.
+template<typename T>
+void register_agent()
+{
+    auto info = T::get_agent_info_static();
+    NetworkAgentFactory::register_printer_agent(
+        info.id, info.name,
+        [](std::shared_ptr<ICloudServiceAgent> cloud_agent,
+           const std::string&                  log_dir) -> std::shared_ptr<IPrinterAgent> {
+            auto agent = std::make_shared<T>(log_dir);
+            if (cloud_agent)
+                agent->set_cloud_agent(cloud_agent);
+            return agent;
+        });
 }
 
 } // anonymous namespace
@@ -30,22 +51,7 @@ bool NetworkAgentFactory::register_printer_agent(const std::string& id, const st
 {
     std::lock_guard<std::mutex> lock(s_registry_mutex);
     auto&                       agents = get_printer_agents();
-
-    auto result = agents.emplace(id, PrinterAgentInfo(id, display_name, std::move(factory)));
-
-    if (result.second) {
-        BOOST_LOG_TRIVIAL(info) << "Registered printer agent: " << id << " (" << display_name << ")";
-
-        // Set as default if it's the first agent registered
-        auto& default_id = get_default_agent_id();
-        if (default_id.empty()) {
-            default_id = id;
-        }
-        return true;
-    } else {
-        BOOST_LOG_TRIVIAL(warning) << "Printer agent already registered: " << id;
-        return false;
-    }
+    return agents.emplace(id, PrinterAgentInfo(id, display_name, std::move(factory))).second;
 }
 
 bool NetworkAgentFactory::is_printer_agent_registered(const std::string& id)
@@ -82,95 +88,96 @@ std::shared_ptr<IPrinterAgent> NetworkAgentFactory::create_printer_agent_by_id(c
                                                                                const std::string&                  log_dir)
 {
     std::lock_guard<std::mutex> lock(s_registry_mutex);
-    auto&                       agents = get_printer_agents();
-    auto                        it     = agents.find(id);
+
+    // Check cache first
+    auto& cache    = get_printer_agent_cache();
+    auto  cache_it = cache.find(id);
+    if (cache_it != cache.end()) {
+        BOOST_LOG_TRIVIAL(info) << "Reusing cached printer agent: " << id;
+        if (cloud_agent)
+            cache_it->second->set_cloud_agent(cloud_agent);
+        return cache_it->second;
+    }
+
+    // Not cached — create via factory
+    auto& agents = get_printer_agents();
+    auto  it     = agents.find(id);
 
     if (it == agents.end()) {
         BOOST_LOG_TRIVIAL(warning) << "Unknown printer agent ID: " << id;
         return nullptr;
     }
 
-    return it->second.factory(cloud_agent, log_dir);
-}
-
-std::string NetworkAgentFactory::get_default_printer_agent_id()
-{
-    std::lock_guard<std::mutex> lock(s_registry_mutex);
-    return get_default_agent_id();
-}
-
-void NetworkAgentFactory::set_default_printer_agent_id(const std::string& id)
-{
-    std::lock_guard<std::mutex> lock(s_registry_mutex);
-    auto&                       agents = get_printer_agents();
-
-    if (agents.find(id) != agents.end()) {
-        get_default_agent_id() = id;
-        BOOST_LOG_TRIVIAL(info) << "Default printer agent set to: " << id;
-    } else {
-        BOOST_LOG_TRIVIAL(warning) << "Cannot set default to unregistered agent: " << id;
+    auto agent = it->second.factory(cloud_agent, log_dir);
+    if (agent) {
+        BOOST_LOG_TRIVIAL(info) << "Created and cached printer agent: " << id;
+        cache[id] = agent;
     }
+    return agent;
+}
+
+void NetworkAgentFactory::clear_printer_agent_cache()
+{
+    std::lock_guard<std::mutex> lock(s_registry_mutex);
+    auto&                       cache = get_printer_agent_cache();
+    for (auto& pair : cache) {
+        if (pair.second)
+            pair.second->disconnect_printer();
+    }
+    cache.clear();
+    BOOST_LOG_TRIVIAL(info) << "Printer agent cache cleared";
 }
 
 void NetworkAgentFactory::register_all_agents()
 {
-    // Register Orca printer agent
-    {
-        auto info = OrcaPrinterAgent::get_agent_info_static();
-        register_printer_agent(info.id, info.name,
-                               [](std::shared_ptr<ICloudServiceAgent> cloud_agent,
-                                  const std::string&                  log_dir) -> std::shared_ptr<IPrinterAgent> {
-                                   auto agent = std::make_shared<OrcaPrinterAgent>(log_dir);
-                                   if (cloud_agent) {
-                                       agent->set_cloud_agent(cloud_agent);
-                                   }
-                                   return agent;
-                               });
-    }
+    register_agent<OrcaPrinterAgent>();
+    register_agent<QidiPrinterAgent>();
+    register_agent<SnapmakerPrinterAgent>();
+    register_agent<MoonrakerPrinterAgent>();
 
-    // Register Qidi printer agent
-    {
-        auto info = QidiPrinterAgent::get_agent_info_static();
-        register_printer_agent(info.id, info.name,
-                               [](std::shared_ptr<ICloudServiceAgent> cloud_agent,
-                                  const std::string&                  log_dir) -> std::shared_ptr<IPrinterAgent> {
-                                   auto agent = std::make_shared<QidiPrinterAgent>(log_dir);
-                                   if (cloud_agent) {
-                                       agent->set_cloud_agent(cloud_agent);
-                                   }
-                                   return agent;
-                               });
-    }
-
-    // Register Moonraker printer agent
-    {
-        auto info = MoonrakerPrinterAgent::get_agent_info_static();
-        register_printer_agent(info.id, info.name,
-                               [](std::shared_ptr<ICloudServiceAgent> cloud_agent,
-                                  const std::string&                  log_dir) -> std::shared_ptr<IPrinterAgent> {
-                                   auto agent = std::make_shared<MoonrakerPrinterAgent>(log_dir);
-                                   if (cloud_agent) {
-                                       agent->set_cloud_agent(cloud_agent);
-                                   }
-                                   return agent;
-                               });
-    }
-
-    // Register BBL printer agent (only if bbl network agent is available)
+    // BBLPrinterAgent takes no constructor args, so register manually
     {
         auto info = BBLPrinterAgent::get_agent_info_static();
         register_printer_agent(info.id, info.name,
                                [](std::shared_ptr<ICloudServiceAgent> cloud_agent,
-                                  const std::string&                  log_dir) -> std::shared_ptr<IPrinterAgent> {
+                                  const std::string& /*log_dir*/) -> std::shared_ptr<IPrinterAgent> {
                                    auto agent = std::make_shared<BBLPrinterAgent>();
-                                   if (cloud_agent) {
+                                   if (cloud_agent)
                                        agent->set_cloud_agent(cloud_agent);
-                                   }
                                    return agent;
                                });
     }
+}
 
-    BOOST_LOG_TRIVIAL(info) << "Registered " << get_printer_agents().size() << " printer agents";
+std::unique_ptr<NetworkAgent> create_agent_from_config(const std::string& log_dir, AppConfig* app_config)
+{
+    if (!app_config)
+        return std::make_unique<NetworkAgent>(nullptr, nullptr);
+
+    // Determine cloud provider from config
+    bool use_orca_cloud = app_config->get_bool("use_orca_cloud");
+
+    // Create cloud agent
+    std::shared_ptr<ICloudServiceAgent> cloud_agent;
+    if (use_orca_cloud || app_config->get_bool("installed_networking")) {
+        CloudAgentProvider provider = use_orca_cloud ? CloudAgentProvider::Orca : CloudAgentProvider::BBL;
+        cloud_agent                 = NetworkAgentFactory::create_cloud_agent(provider, log_dir);
+        if (!cloud_agent) {
+            BOOST_LOG_TRIVIAL(error) << "Failed to create cloud agent";
+        }
+    }
+
+    // Create NetworkAgent with cloud agent only (printer agent added later when printer is selected)
+    auto agent = std::make_unique<NetworkAgent>(std::move(cloud_agent), nullptr);
+
+    if (agent && use_orca_cloud) {
+        auto* orca_cloud = dynamic_cast<OrcaCloudServiceAgent*>(agent->get_cloud_agent().get());
+        if (orca_cloud) {
+            orca_cloud->configure_urls(app_config);
+        }
+    }
+
+    return agent;
 }
 
 } // namespace Slic3r

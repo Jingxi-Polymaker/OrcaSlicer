@@ -3,7 +3,6 @@
 #include "libslic3r/Time.hpp"
 #include "libslic3r/Thread.hpp"
 #include "slic3r/Utils/NetworkAgent.hpp"
-#include "slic3r/Utils/PrinterCommLogger.hpp"
 #include "GuiColor.hpp"
 
 #include "GUI_App.hpp"
@@ -362,6 +361,30 @@ std::string MachineObject::get_auto_pa_cali_thumbnail_img_str() const
 std::string MachineObject::get_ftp_folder()
 {
     return DevPrinterConfigUtil::get_ftp_folder(printer_type);
+}
+
+std::string MachineObject::dev_id_from_address(const std::string& host, const std::string& port)
+{
+    std::string result = host;
+    // Normalize host: strip protocol and path
+    if (result.find("http://") == 0)
+        result = result.substr(7);
+    else if (result.find("https://") == 0)
+        result = result.substr(8);
+    auto slash = result.find('/');
+    if (slash != std::string::npos)
+        result = result.substr(0, slash);
+
+    // Build full address (host:port)
+    if (!port.empty()) {
+        // Strip inline port if present (port comes from printhost_port)
+        auto colon = result.find(':');
+        if (colon != std::string::npos)
+            result = result.substr(0, colon);
+
+        result += ":" + port;
+    }
+    return result;
 }
 
 bool MachineObject::HasRecentCloudMessage()
@@ -2488,11 +2511,6 @@ bool MachineObject::is_camera_busy_off()
 
 int MachineObject::publish_json(const json& json_item, int qos, int flag)
 {
-    PrinterCommLogger::instance().log_send(
-        get_dev_id(),
-        is_lan_mode_printer() ? "LAN" : "Cloud",
-        json_item);
-
     int rtn = 0;
     if (is_lan_mode_printer()) {
         rtn = local_publish_json(json_item.dump(), qos, flag);
@@ -2600,12 +2618,6 @@ int MachineObject::parse_json(std::string tunnel, std::string payload, bool key_
         if (j_pre.empty()) {
             return 0;
         }
-
-        // Log incoming message
-        PrinterCommLogger::instance().log_recv(
-            get_dev_id(),
-            tunnel,
-            j_pre);
 
         if (j_pre.contains("print")) {
             if (m_active_state == NotActive) m_active_state = Active;

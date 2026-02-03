@@ -342,7 +342,7 @@ public:
     NetworkAgent* getAgent() { return m_agent; }
 
     // Dynamic printer agent switching
-    void switch_printer_agent(const std::string& agent_id);
+    void switch_printer_agent();
 
     FilamentColorCodeQuery* get_filament_color_code_query();
     bool is_editor() const { return m_app_mode == EAppMode::Editor; }
@@ -724,6 +724,9 @@ private:
 
     bool            config_wizard_startup();
 	void            check_updates(const bool verbose);
+
+    // select or add MachineObject
+    void            select_machine(const std::string& agent_id);
 
     bool                    m_init_app_config_from_older { false };
     bool                    m_datadir_redefined { false };
