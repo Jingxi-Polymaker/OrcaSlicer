@@ -153,7 +153,7 @@ function SetLoginInfo( strAvatar, strName )
 	$("#UserName").text(strName);
 	
     let OriginAvatar=$("#UserAvatarIcon").prop("src");
-	if(strAvatar!=OriginAvatar)
+	if(strAvatar != null && strAvatar.trim() !== '' && strAvatar!=OriginAvatar)
 		$("#UserAvatarIcon").prop("src",strAvatar);
 	else
 	{
