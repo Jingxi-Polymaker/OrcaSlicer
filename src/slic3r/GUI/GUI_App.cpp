@@ -5777,36 +5777,12 @@ void GUI_App::sync_preset(Preset* preset)
 
     auto setting_id = preset->setting_id;
     std::map<std::string, std::string> values_map;
-    if (setting_id.empty() && preset->sync_info.empty()) {
-        if (m_create_preset_blocked[preset->type])
-            return;
-        int ret = preset_bundle->get_differed_values_to_update(*preset, values_map);
-        if (!ret) {
-            std::string new_setting_id = m_agent->request_setting_id(preset->name, &values_map, &http_code);
-            if (!new_setting_id.empty()) {
-                setting_id = new_setting_id;
-                result = 0;
-                auto update_time_str = values_map[ORCA_JSON_KEY_UPDATE_TIME];
-                if (!update_time_str.empty())
-                    update_time = std::atoll(update_time_str.c_str());
-            }
-            else {
-                BOOST_LOG_TRIVIAL(trace) << "[sync_preset]init: request_setting_id failed, http code "<<http_code;
-                // do not post new preset this time if http code >= 400
-                if (http_code >= 400) {
-                    result = 0;
-                    updated_info = "hold";
-                } else
-                    result = -1;
-            }
-        }
-        else {
-            BOOST_LOG_TRIVIAL(trace) << "[sync_preset]init: can not generate differed key-values";
-            result = 0;
-            updated_info = "hold";
-        }
-    }
-    else if (preset->sync_info.compare("create") == 0) {
+
+    // Check and catch if the file is new and missing .info
+    bool needs_init = setting_id.empty() && preset->sync_info.empty();
+
+    // Actually process sync info
+    if (needs_init || preset->sync_info.compare("create") == 0) {
         if (m_create_preset_blocked[preset->type])
             return;
         int ret = preset_bundle->get_differed_values_to_update(*preset, values_map);
@@ -5825,8 +5801,6 @@ void GUI_App::sync_preset(Preset* preset)
                     result = 0;
                     updated_info = "hold";
                 }
-                else
-                    result = -1;
             }
         } else {
             BOOST_LOG_TRIVIAL(trace) << "[sync_preset]create: can not generate differed preset";
@@ -5841,16 +5815,16 @@ void GUI_App::sync_preset(Preset* preset)
                     result = 0;
                 }
                 else {
-                result = m_agent->put_setting(setting_id, preset->name, &values_map, &http_code);
-                if (http_code >= 400) {
-                    result = 0;
-                    updated_info = "hold";
-                    BOOST_LOG_TRIVIAL(error) << "[sync_preset] put setting_id = " << setting_id << " failed, http_code = " << http_code;
-                } else {
-                        auto update_time_str = values_map[ORCA_JSON_KEY_UPDATE_TIME];
-                        if (!update_time_str.empty())
-                            update_time = std::atoll(update_time_str.c_str());
-                }
+                    result = m_agent->put_setting(setting_id, preset->name, &values_map, &http_code);
+                    if (http_code >= 400) {
+                        result = 0;
+                        updated_info = "hold";
+                        BOOST_LOG_TRIVIAL(error) << "[sync_preset] put setting_id = " << setting_id << " failed, http_code = " << http_code;
+                    } else {
+                            auto update_time_str = values_map[ORCA_JSON_KEY_UPDATE_TIME];
+                            if (!update_time_str.empty())
+                                update_time = std::atoll(update_time_str.c_str());
+                    }
                 }
 
             }
@@ -5879,6 +5853,26 @@ void GUI_App::sync_preset(Preset* preset)
             MessageDialog(mainframe, msg, _L("Sync user presets"), wxICON_WARNING | wxOK).ShowModal();
         });
         return; // this error not need hold, and should not hold
+    }
+
+    // Handle HTTP 413 - Payload Too Large
+    if (http_code == 413) {
+        // Set sync_info to "will_not_sync" so this preset won't be synced again
+        updated_info = "will_not_sync";
+        result = 0; // Set to 0 so the sync_info gets saved below
+
+        // Show user notification
+        CallAfter([this] {
+            static bool size_limit_dialog_notified = false;
+            if (size_limit_dialog_notified)
+                return;
+            size_limit_dialog_notified = true;
+            if (mainframe == nullptr)
+                return;
+            auto msg = _L("The preset content is too large to sync to the cloud (exceeds 1MB). Please reduce the preset size by removing custom configurations or use it locally only.");
+            MessageDialog(mainframe, msg, _L("Sync user presets"), wxICON_WARNING | wxOK).ShowModal();
+        });
+        // NOTE: Don't return here - let execution continue to save the sync_info
     }
 
     // update sync_info preset info in file

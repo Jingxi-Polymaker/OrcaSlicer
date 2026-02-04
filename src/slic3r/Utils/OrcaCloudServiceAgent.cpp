@@ -55,6 +55,7 @@ constexpr const char* ORCA_SYNC_PULL_PATH = "/api/v1/sync/pull";
 constexpr const char* ORCA_SYNC_PUSH_PATH = "/api/v1/sync/push";
 constexpr const char* ORCA_PROFILES_PATH = "/api/v1/profiles";
 constexpr const char* ORCA_SYNC_STATE_FILE = "sync_state";
+constexpr size_t ORCA_SYNC_MAX_PAYLOAD_SIZE = 1048576; // 1MB size limit
 
 constexpr const char* CONFIG_ORCA_API_URL = "orca_api_url";
 constexpr const char* CONFIG_ORCA_AUTH_URL = "orca_auth_url";
@@ -1251,9 +1252,23 @@ SyncPushResult OrcaCloudServiceAgent::sync_push(
         body["original_updated_at"] = original_updated_at;
     }
 
+    // Validate payload size before upload
+    std::string body_str = body.dump();
+    if (body_str.size() > ORCA_SYNC_MAX_PAYLOAD_SIZE) {
+        result.http_code = 413; // HTTP 413 Payload Too Large
+        result.success = false;
+        result.error_message = "Preset content exceeds 1MB size limit (actual: " +
+                              std::to_string(body_str.size()) + " bytes)";
+        BOOST_LOG_TRIVIAL(error) << "OrcaCloudServiceAgent: sync_push payload too large - "
+                                 << "size=" << body_str.size() << " bytes, "
+                                 << "limit=" << ORCA_SYNC_MAX_PAYLOAD_SIZE << " bytes, "
+                                 << "profile_id=" << profile_id;
+        return result;
+    }
+
     std::string response;
     unsigned int http_code = 0;
-    int http_result = http_post(ORCA_SYNC_PUSH_PATH, body.dump(), &response, &http_code);
+    int http_result = http_post(ORCA_SYNC_PUSH_PATH, body_str, &response, &http_code);
 
     result.http_code = http_code;
 
