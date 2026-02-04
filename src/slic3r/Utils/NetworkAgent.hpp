@@ -54,6 +54,9 @@ public:
     std::shared_ptr<ICloudServiceAgent> get_cloud_agent() const { return m_cloud_agent; }
     std::shared_ptr<IPrinterAgent> get_printer_agent() const { return m_printer_agent; }
 
+    // Get the cloud provider type (Orca or BBL)
+    CloudAgentProvider get_provider() const { return m_cloud_agent ? m_cloud_agent->get_provider() : CloudAgentProvider::BBL; }
+
     // Set the printer agent (for dynamic agent switching)
     void set_printer_agent(std::shared_ptr<IPrinterAgent> printer_agent);
 

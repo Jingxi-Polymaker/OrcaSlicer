@@ -29,12 +29,15 @@ namespace Slic3r {
  * Implementations:
  * - OrcaCloudServiceAgent: Native implementation for Orca Cloud (includes OAuth PKCE)
  * - BBLCloudServiceAgent: Wrapper around Bambu Lab's proprietary DLL
+ * 
+ * Use the CloudAgentProvider enum for runtime identification of cloud agent.
  *
  * Token Sharing Pattern:
  * IPrinterAgent receives an ICloudServiceAgent instance via set_cloud_agent() to
  * access tokens for cloud-relay operations without coupling to a specific auth
  * implementation.
  */
+enum class CloudAgentProvider { Orca, BBL };
 class ICloudServiceAgent {
 public:
     virtual ~ICloudServiceAgent() = default;
@@ -441,6 +444,11 @@ public:
      * Return the version of the cloud service implementation.
      */
     virtual std::string get_version() = 0;
+
+    /**
+     * Identify the concrete cloud agent at runtime.
+     */
+    virtual CloudAgentProvider get_provider() const = 0;
 
     // ========================================================================
     // Callback Registration

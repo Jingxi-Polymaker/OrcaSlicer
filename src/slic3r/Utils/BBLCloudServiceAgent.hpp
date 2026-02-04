@@ -18,6 +18,7 @@ class BBLCloudServiceAgent : public ICloudServiceAgent {
 public:
     BBLCloudServiceAgent();
     ~BBLCloudServiceAgent() override;
+    CloudAgentProvider get_provider() const override { return CloudAgentProvider::BBL; }
 
     // ========================================================================
     // ICloudServiceAgent Interface Implementation - Auth Methods

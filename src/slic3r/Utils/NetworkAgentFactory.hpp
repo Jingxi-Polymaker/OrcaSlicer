@@ -15,14 +15,6 @@
 
 namespace Slic3r {
 
-/**
- * CloudAgentProvider - Specifies which implementation to use for each agent type.
- *
- * - Orca: Native Orca cloud implementations (OrcaCloudServiceAgent)
- * - BBL: BBL DLL wrapper implementations (BBLCloudServiceAgent)
- */
-enum class CloudAgentProvider { Orca, BBL };
-
 static constexpr char ORCA_PRINTER_AGENT_ID[] = "orca";
 static constexpr char BBL_PRINTER_AGENT_ID[] = "bbl";
 

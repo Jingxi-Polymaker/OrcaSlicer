@@ -107,6 +107,7 @@ public:
 
     explicit OrcaCloudServiceAgent(std::string log_dir);
     ~OrcaCloudServiceAgent() override;
+    CloudAgentProvider get_provider() const override { return CloudAgentProvider::Orca; }
 
     // Configuration
     void configure_urls(AppConfig* app_config);

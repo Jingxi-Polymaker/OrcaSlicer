@@ -4432,7 +4432,7 @@ void GUI_App::get_login_info()
         else {
             // OrcaNetwork performs async refresh on startup; avoid clearing
             // persisted tokens when the UI polls before refresh completes.
-            if (m_agent->get_version() != "orca_network") {
+            if (m_agent->get_provider() != CloudAgentProvider::Orca) {
                 m_agent->user_logout();
                 std::string logout_cmd = m_agent->build_logout_cmd();
                 wxString    strJS      = wxString::Format("window.postMessage(%s)", logout_cmd);
