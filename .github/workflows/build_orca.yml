@@ -108,7 +108,7 @@ jobs:
 
  # Thanks to RaySajuuk, it's working now
       - name: Sign app and notary
-        if: github.repository == 'OrcaSlicer/OrcaSlicer' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && inputs.os == 'orca-macos-arm64'
+        if: github.repository == 'OrcaSlicer/OrcaSlicer_priv' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && inputs.os == 'orca-macos-arm64'
         working-directory: ${{ github.workspace }}
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
@@ -127,7 +127,7 @@ jobs:
           security import $CERTIFICATE_PATH -P $P12_PASSWORD -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k $P12_PASSWORD $KEYCHAIN_PATH
-          codesign --deep --force --verbose --options runtime --timestamp --entitlements ${{ github.workspace }}/scripts/disable_validation.entitlements --sign "$CERTIFICATE_ID" ${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer.app
+          codesign --deep --force --verbose --options runtime --timestamp --entitlements ${{ github.workspace }}/scripts/disable_validation.entitlements --sign "$CERTIFICATE_ID" ${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer_priv.app
           # Sign OrcaSlicer_profile_validator.app if it exists
           if [ -f "${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer_profile_validator.app/Contents/MacOS/OrcaSlicer_profile_validator" ]; then
             codesign --deep --force --verbose --options runtime --timestamp --entitlements ${{ github.workspace }}/scripts/disable_validation.entitlements --sign "$CERTIFICATE_ID" ${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer_profile_validator.app
@@ -136,7 +136,7 @@ jobs:
           # Create main OrcaSlicer DMG without the profile validator helper
           mkdir -p ${{ github.workspace }}/build/universal/OrcaSlicer_dmg
           rm -rf ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/*
-          cp -R ${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer.app ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/
+          cp -R ${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer_priv.app ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/
           ln -sfn /Applications ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/Applications
           hdiutil create -volname "OrcaSlicer" -srcfolder ${{ github.workspace }}/build/universal/OrcaSlicer_dmg -ov -format UDZO OrcaSlicer_Mac_universal_${{ env.ver }}.dmg
           codesign --deep --force --verbose --options runtime --timestamp --entitlements ${{ github.workspace }}/scripts/disable_validation.entitlements --sign "$CERTIFICATE_ID" OrcaSlicer_Mac_universal_${{ env.ver }}.dmg
@@ -167,7 +167,7 @@ jobs:
         run: |
           mkdir -p ${{ github.workspace }}/build/universal/OrcaSlicer_dmg
           rm -rf ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/*
-          cp -R ${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer.app ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/
+          cp -R ${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer_priv.app ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/
           ln -sfn /Applications ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/Applications
           hdiutil create -volname "OrcaSlicer" -srcfolder ${{ github.workspace }}/build/universal/OrcaSlicer_dmg -ov -format UDZO OrcaSlicer_Mac_universal_${{ env.ver }}.dmg
           
@@ -196,10 +196,10 @@ jobs:
           if-no-files-found: ignore
 
       - name: Deploy Mac release
-        if: github.repository == 'OrcaSlicer/OrcaSlicer' && github.ref == 'refs/heads/main' && inputs.os == 'orca-macos-arm64'
+        if: github.repository == 'OrcaSlicer/OrcaSlicer_priv' && github.ref == 'refs/heads/main' && inputs.os == 'orca-macos-arm64'
         uses: WebFreak001/deploy-nightly@v3.2.0
         with:
-          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer/releases/137995723/assets{?name,label}
+          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer_priv/releases/137995723/assets{?name,label}
           release_id: 137995723
           asset_path: ${{ github.workspace }}/OrcaSlicer_Mac_universal_${{ env.ver }}.dmg
           asset_name: OrcaSlicer_Mac_universal_nightly.dmg
@@ -207,10 +207,10 @@ jobs:
           max_releases: 1 # optional, if there are more releases than this matching the asset_name, the oldest ones are going to be deleted
 
       - name: Deploy Mac OrcaSlicer_profile_validator DMG release
-        if: github.repository == 'OrcaSlicer/OrcaSlicer' && github.ref == 'refs/heads/main' && inputs.os == 'orca-macos-arm64'
+        if: github.repository == 'OrcaSlicer/OrcaSlicer_priv' && github.ref == 'refs/heads/main' && inputs.os == 'orca-macos-arm64'
         uses: WebFreak001/deploy-nightly@v3.2.0
         with:
-          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer/releases/137995723/assets{?name,label}
+          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer_priv/releases/137995723/assets{?name,label}
           release_id: 137995723
           asset_path: ${{ github.workspace }}/OrcaSlicer_profile_validator_Mac_universal_${{ env.ver }}.dmg
           asset_name: OrcaSlicer_profile_validator_Mac_universal_nightly.dmg
@@ -283,10 +283,10 @@ jobs:
           path: ${{ github.workspace }}/build/src/Release/OrcaSlicer_profile_validator.exe
 
       - name: Deploy Windows release portable
-        if: github.repository == 'OrcaSlicer/OrcaSlicer' && github.ref == 'refs/heads/main' && inputs.os == 'windows-latest'
+        if: github.repository == 'OrcaSlicer/OrcaSlicer_priv' && github.ref == 'refs/heads/main' && inputs.os == 'windows-latest'
         uses: WebFreak001/deploy-nightly@v3.2.0
         with:
-          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer/releases/137995723/assets{?name,label}
+          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer_priv/releases/137995723/assets{?name,label}
           release_id: 137995723
           asset_path: ${{ github.workspace }}/build/OrcaSlicer_Windows_${{ env.ver }}_portable.zip
           asset_name: OrcaSlicer_Windows_nightly_portable.zip
@@ -294,10 +294,10 @@ jobs:
           max_releases: 1
 
       - name: Deploy Windows release installer
-        if: github.repository == 'OrcaSlicer/OrcaSlicer' && github.ref == 'refs/heads/main' && inputs.os == 'windows-latest'
+        if: github.repository == 'OrcaSlicer/OrcaSlicer_priv' && github.ref == 'refs/heads/main' && inputs.os == 'windows-latest'
         uses: WebFreak001/deploy-nightly@v3.2.0
         with:
-          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer/releases/137995723/assets{?name,label}
+          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer_priv/releases/137995723/assets{?name,label}
           release_id: 137995723
           asset_path: ${{ github.workspace }}/build/OrcaSlicer_Windows_Installer_${{ env.ver }}.exe
           asset_name: OrcaSlicer_Windows_Installer_nightly.exe
@@ -305,10 +305,10 @@ jobs:
           max_releases: 1
 
       - name: Deploy Windows OrcaSlicer_profile_validator release
-        if: github.repository == 'OrcaSlicer/OrcaSlicer' && github.ref == 'refs/heads/main' && inputs.os == 'windows-latest'
+        if: github.repository == 'OrcaSlicer/OrcaSlicer_priv' && github.ref == 'refs/heads/main' && inputs.os == 'windows-latest'
         uses: WebFreak001/deploy-nightly@v3.2.0
         with:
-          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer/releases/137995723/assets{?name,label}
+          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer_priv/releases/137995723/assets{?name,label}
           release_id: 137995723
           asset_path: ${{ github.workspace }}/build/src/Release/OrcaSlicer_profile_validator.exe
           asset_name: OrcaSlicer_profile_validator_Windows_nightly.exe
@@ -374,19 +374,19 @@ jobs:
           path: './build/src/Release/OrcaSlicer_profile_validator'
 
       - name: Deploy Ubuntu release
-        if: ${{ github.repository == 'OrcaSlicer/OrcaSlicer' && ! env.ACT && github.ref == 'refs/heads/main' && (inputs.os == 'ubuntu-20.04' || inputs.os == 'ubuntu-24.04') }}
+        if: ${{ github.repository == 'OrcaSlicer/OrcaSlicer_priv' && ! env.ACT && github.ref == 'refs/heads/main' && (inputs.os == 'ubuntu-20.04' || inputs.os == 'ubuntu-24.04') }}
         env:
           ubuntu-ver-str: ${{ (inputs.os == 'ubuntu-24.04' && '_Ubuntu2404') || '' }}
         uses: WebFreak001/deploy-nightly@v3.2.0
         with:
-          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer/releases/137995723/assets{?name,label}
+          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer_priv/releases/137995723/assets{?name,label}
           release_id: 137995723
           asset_path: ./build/OrcaSlicer_Linux_AppImage${{ env.ubuntu-ver-str }}_${{ env.ver }}.AppImage
           asset_name: OrcaSlicer_Linux_AppImage${{ env.ubuntu-ver-str }}_nightly.AppImage
           asset_content_type: application/octet-stream
           max_releases: 1 # optional, if there are more releases than this matching the asset_name, the oldest ones are going to be deleted
       - name: Deploy Ubuntu release
-        if: ${{ github.repository == 'OrcaSlicer/OrcaSlicer' && ! env.ACT && github.ref == 'refs/heads/main' && inputs.os == 'ubuntu-24.04' }}
+        if: ${{ github.repository == 'OrcaSlicer/OrcaSlicer_priv' && ! env.ACT && github.ref == 'refs/heads/main' && inputs.os == 'ubuntu-24.04' }}
         uses: rickstaa/action-create-tag@v1
         with:
           tag: "nightly-builds"
@@ -395,12 +395,12 @@ jobs:
           message: "nightly-builds"
 
       - name: Deploy Ubuntu OrcaSlicer_profile_validator release
-        if: ${{ github.repository == 'OrcaSlicer/OrcaSlicer' && ! env.ACT && github.ref == 'refs/heads/main' && (inputs.os == 'ubuntu-20.04' || inputs.os == 'ubuntu-24.04') }}
+        if: ${{ github.repository == 'OrcaSlicer/OrcaSlicer_priv' && ! env.ACT && github.ref == 'refs/heads/main' && (inputs.os == 'ubuntu-20.04' || inputs.os == 'ubuntu-24.04') }}
         env:
           ubuntu-ver-str: ${{ (inputs.os == 'ubuntu-24.04' && '_Ubuntu2404') || '' }}
         uses: WebFreak001/deploy-nightly@v3.2.0
         with:
-          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer/releases/137995723/assets{?name,label}
+          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer_priv/releases/137995723/assets{?name,label}
           release_id: 137995723
           asset_path: ./build/src/Release/OrcaSlicer_profile_validator
           asset_name: OrcaSlicer_profile_validator_Linux${{ env.ubuntu-ver-str }}_nightly
@@ -408,10 +408,10 @@ jobs:
           max_releases: 1
 
       - name: Deploy orca_custom_preset_tests
-        if: ${{ github.repository == 'OrcaSlicer/OrcaSlicer' && ! env.ACT && github.ref == 'refs/heads/main' && inputs.os == 'ubuntu-24.04' }}
+        if: ${{ github.repository == 'OrcaSlicer/OrcaSlicer_priv' && ! env.ACT && github.ref == 'refs/heads/main' && inputs.os == 'ubuntu-24.04' }}
         uses: WebFreak001/deploy-nightly@v3.2.0
         with:
-          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer/releases/137995723/assets{?name,label}
+          upload_url: https://uploads.github.com/repos/OrcaSlicer/OrcaSlicer_priv/releases/137995723/assets{?name,label}
           release_id: 137995723
           asset_path: ${{ github.workspace }}/resources/profiles/orca_custom_preset_tests.zip
           asset_name: orca_custom_preset_tests.zip
