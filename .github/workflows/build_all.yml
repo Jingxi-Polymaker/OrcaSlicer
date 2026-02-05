@@ -50,19 +50,8 @@ concurrency:
   
 
 jobs:
-  build_linux:
-    name: Build Linux
-    strategy:
-      fail-fast: false
-    # Don't run scheduled builds on forks:
-    if: ${{ !cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer_priv') }}
-    uses: ./.github/workflows/build_check_cache.yml
-    with:
-      os: ubuntu-24.04
-      build-deps-only: ${{ inputs.build-deps-only || false }}
-    secrets: inherit
   build_all:
-    name: Build Non-Linux
+    name: Build All
     strategy:
       fail-fast: false
       matrix:
