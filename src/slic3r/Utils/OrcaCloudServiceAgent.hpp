@@ -158,6 +158,7 @@ public:
     int connect_server() override;
     bool is_server_connected() override;
     int refresh_connection() override;
+    bool is_refresh_running() const { return refresh_running.load(); }
     int start_subscribe(std::string module) override;
     int stop_subscribe(std::string module) override;
     int add_subscribe(std::vector<std::string> dev_list) override;
