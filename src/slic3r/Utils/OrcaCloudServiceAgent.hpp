@@ -39,8 +39,8 @@ struct ProfileUpsert {
     std::string id;
     std::string name;
     nlohmann::json content;
-    long long updated_at;
-    long long created_at;
+    long long updated_time;
+    long long created_time;
 };
 
 struct SyncPullResponse {
@@ -52,7 +52,7 @@ struct SyncPullResponse {
 struct SyncPushResult {
     bool success;
     int http_code;
-    long long new_updated_at;
+    long long new_updated_time;
     ProfileUpsert server_version;
     bool server_deleted;
     std::string error_message;
@@ -284,7 +284,7 @@ private:
         const std::string& profile_id,
         const std::string& name,
         const nlohmann::json& content,
-        const std::string& original_updated_at = ""
+        const std::string& original_updated_time = ""
     );
 
     // HTTP request helpers
