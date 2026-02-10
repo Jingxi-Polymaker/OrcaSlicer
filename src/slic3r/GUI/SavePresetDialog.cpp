@@ -221,11 +221,8 @@ void SavePresetDialog::Item::update_valid_bmp()
 void SavePresetDialog::Item::accept()
 {
     if (m_valid_type == Warning) {
-        // BBS add sync info
         auto    it               = m_presets->find_preset(m_preset_name, false);
         Preset &current_preset   = *it;
-        current_preset.sync_info = "delete";
-        current_preset.save_info();
         if (!current_preset.setting_id.empty()) {
             BOOST_LOG_TRIVIAL(info) << "delete preset = " << current_preset.name << ", setting_id = " << current_preset.setting_id;
             wxGetApp().delete_preset_from_cloud(current_preset.setting_id, current_preset.file);
