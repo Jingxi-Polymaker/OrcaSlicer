@@ -786,12 +786,11 @@ std::string OrcaCloudServiceAgent::build_login_cmd()
 
 std::string OrcaCloudServiceAgent::build_logout_cmd()
 {
-    pt::ptree tree;
-    tree.put("action", "logout");
-    tree.put("provider", "orca");
+    pt::ptree cmd;
+    cmd.put("command", "studio_useroffline");
 
     std::stringstream ss;
-    pt::write_json(ss, tree);
+    pt::write_json(ss, cmd, false);
     return ss.str();
 }
 

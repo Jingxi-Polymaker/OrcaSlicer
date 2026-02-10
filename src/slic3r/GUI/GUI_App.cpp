@@ -1,3 +1,4 @@
+#include "OrcaCloudServiceAgent.hpp"
 #include "libslic3r/Technologies.hpp"
 #include "GUI_App.hpp"
 #include "GUI_Init.hpp"
@@ -4430,9 +4431,16 @@ void GUI_App::get_login_info()
             GUI::wxGetApp().run_script(strJS);
         }
         else {
+            auto can_logout = [&]() {
+                if (m_agent->get_provider() != CloudAgentProvider::Orca)
+                    return true;
+                
+                auto orca = std::dynamic_pointer_cast<OrcaCloudServiceAgent>(m_agent->get_cloud_agent());
+                return !orca->is_refresh_running();
+            };
             // OrcaNetwork performs async refresh on startup; avoid clearing
             // persisted tokens when the UI polls before refresh completes.
-            if (m_agent->get_provider() != CloudAgentProvider::Orca) {
+            if (can_logout()) {
                 m_agent->user_logout();
                 std::string logout_cmd = m_agent->build_logout_cmd();
                 wxString    strJS      = wxString::Format("window.postMessage(%s)", logout_cmd);
