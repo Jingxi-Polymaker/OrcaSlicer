@@ -1379,6 +1379,9 @@ void PresetCollection::load_presets(
                         fs::remove(file_path);
                 }
 
+                if (preset_loaded_fn != nullptr)
+                    preset_loaded_fn(preset);
+
                 presets_loaded.emplace_back(preset);
                 BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << " load config successful and preset name is:" << preset.name;
             } catch (const std::runtime_error &err) {
