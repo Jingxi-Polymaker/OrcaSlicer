@@ -841,6 +841,40 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
     fs::path    folder(user_folder / user);
     if (!fs::exists(folder)) fs::create_directory(folder);
 
+    // Load bundle metadata from _local directory first
+    fs::path local_dir(folder / PRESET_LOCAL_DIR);
+    if (fs::exists(local_dir)) {
+        for (auto& entry : fs::directory_iterator(local_dir)) {
+            if (!fs::is_directory(entry.path())) continue;
+
+            std::string bundle_dir = entry.path().string();
+            fs::path metadata_file = entry.path() / PRESET_BUNDLE_METADATA;
+            if (!fs::exists(metadata_file)) continue;
+
+            BundleMetadata metadata;
+            if (!metadata.load_from_json(metadata_file.string())) continue;
+
+            // Add the profiles
+            this->prints.load_presets(bundle_dir, PRESET_PRINT_NAME, substitutions, substitution_rule, [&](Preset& preset) {
+                preset.bundle_id = metadata.id;
+                preset.is_from_bundle = true;
+                metadata.print_presets.push_back(preset.name);
+            });
+            this->filaments.load_presets(bundle_dir, PRESET_FILAMENT_NAME, substitutions, substitution_rule, [&](Preset& preset) {
+                preset.bundle_id = metadata.id;
+                preset.is_from_bundle = true;
+                metadata.filament_presets.push_back(preset.name);
+            });
+            this->printers.load_presets(bundle_dir, PRESET_PRINTER_NAME, substitutions, substitution_rule, [&](Preset& preset) {
+                preset.bundle_id = metadata.id;
+                preset.is_from_bundle = true;
+                metadata.printer_presets.push_back(preset.name);
+            });
+
+            m_bundles[metadata.id] = metadata;
+        }
+    }
+
     // BBS do not load sla_print
     // BBS: change directoties by design
     try {
@@ -4545,4 +4579,50 @@ bool PresetBundle::has_errors() const
     return has_errors;
 }
 
+// Orca: BundleMetadata method implementations
+bool BundleMetadata::load_from_json(const std::string& path)
+{
+    try {
+        boost::nowide::ifstream ifs(path);
+        if (!ifs.good())
+            return false;
+
+        json j;
+        ifs >> j;
+
+        if (j.contains("id")) this->id = j["id"].get<std::string>();
+        if (j.contains("name")) this->name = j["name"].get<std::string>();
+        if (j.contains("version")) this->version = j["version"].get<std::string>();
+        if (j.contains("description")) this->description = j["description"].get<std::string>();
+        if (j.contains("author")) this->author = j["author"].get<std::string>();
+        if (j.contains("imported_time")) this->imported_time = j["imported_time"].get<long long>();
+        if (j.contains("updated_time")) this->updated_time = j["updated_time"].get<long long>();
+
+        return true;
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << "Failed to load bundle metadata from " << path << ": " << e.what();
+        return false;
+    }
+}
+
+bool BundleMetadata::save_to_json(const std::string& path) const
+{
+    try {
+        json j;
+        j["id"] = this->id;
+        j["name"] = this->name;
+        j["version"] = this->version;
+        j["description"] = this->description;
+        j["author"] = this->author;
+        j["imported_time"] = this->imported_time;
+        j["updated_time"] = this->updated_time;
+
+        boost::nowide::ofstream ofs(path);
+        ofs << j.dump(4);
+        return ofs.good();
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << "Failed to save bundle metadata to " << path << ": " << e.what();
+        return false;
+    }
+}
 } // namespace Slic3r

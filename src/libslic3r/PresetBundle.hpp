@@ -72,6 +72,26 @@ struct FilamentBaseInfo
     int  filament_printable = 3;
 };
 
+// Orca: Bundle metadata structure for imported preset bundles
+struct BundleMetadata
+{
+    std::string                     id;         // Bundle ID: UUID (OrcaCloud) or name+timestamp (external)
+    std::string                     name;       // Display name
+    std::string                     version;    // Bundle version
+    std::string                     description;
+    std::string                     author;
+    long long                       imported_time{0};
+    long long                       updated_time{0};
+
+    // Cached preset names by type (populated on load)
+    std::vector<std::string>        print_presets;
+    std::vector<std::string>        filament_presets;
+    std::vector<std::string>        printer_presets;
+
+    bool load_from_json(const std::string& path);
+    bool save_to_json(const std::string& path) const;
+};
+
 // Bundle of Print + Filament + Printer presets.
 class PresetBundle
 {
@@ -232,6 +252,9 @@ public:
     // Orca: for OrcaFilamentLibrary
     std::map<std::string, DynamicPrintConfig> m_config_maps;
     std::map<std::string, std::string> m_filament_id_maps;
+
+    // Orca: Bundle metadata and cached preset names
+    std::map<std::string, BundleMetadata>  m_bundles;
 
         struct ObsoletePresets
     {

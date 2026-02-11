@@ -1204,7 +1204,8 @@ void PresetCollection::add_default_preset(const std::vector<std::string> &keys, 
 // Throws an exception on error.
 void PresetCollection::load_presets(
     const std::string &dir_path, const std::string &subdir,
-    PresetsConfigSubstitutions& substitutions, ForwardCompatibilitySubstitutionRule substitution_rule)
+    PresetsConfigSubstitutions& substitutions, ForwardCompatibilitySubstitutionRule substitution_rule,
+    std::function<void(Preset&)> preset_loaded_fn)
 {
     // Don't use boost::filesystem::canonical() on Windows, it is broken in regard to reparse points,
     // see https://github.com/prusa3d/PrusaSlicer/issues/732
