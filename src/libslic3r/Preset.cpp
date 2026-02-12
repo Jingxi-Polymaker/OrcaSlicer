@@ -570,6 +570,8 @@ void Preset::save(DynamicPrintConfig* parent_config)
         from_str = std::string("User");
     else if (this->is_project_embedded)
         from_str = std::string("Project");
+    else if (this->is_from_bundle)
+        from_str = std::string("Bundle");
     else if (this->is_system)
         from_str = std::string("System");
     else

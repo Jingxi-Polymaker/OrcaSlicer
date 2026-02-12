@@ -1340,7 +1340,7 @@ void PlaterPresetComboBox::update()
                 bool unsupported = group == "Unsupported presets";
                 for (auto it : list) {
                     // ORCA add sorting support for vendor / type for user presets
-                    auto groupName2 = groupName == "by_bundle"   ? (preset_bundle_names[it->first].empty()     ? _L("Unbundled")   : preset_bundle_names[it->first])
+                    auto groupName2 = groupName == "by_bundle"   ? (preset_bundle_names[it->first].empty()     ? _L("Unspecified")   : preset_bundle_names[it->first])
                                     : groupName == "by_type"     ? (preset_filament_types[it->first].empty()   ? _L("Unspecified") : preset_filament_types[it->first])
                                     : groupName == "by_vendor"   ? (preset_filament_vendors[it->first].empty() ? _L("Unspecified") : preset_filament_vendors[it->first])
                                     : groupByGroup               ? groupName
