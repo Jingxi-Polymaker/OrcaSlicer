@@ -553,8 +553,19 @@ void Preset::remove_files()
     boost::nowide::remove(this->file.c_str());
     fs::path idx_path(this->file);
     idx_path.replace_extension(".info");
-    if (fs::exists(idx_path))
-        boost::nowide::remove(idx_path.string().c_str());
+    if (fs::exists(idx_path)) {
+        // Check if this is a cloud-synced preset
+        if (!this->setting_id.empty()) {
+            // Cloud-synced preset - mark for deletion and keep .info file until sync confirms
+            this->sync_info = "delete";
+            this->save_info(idx_path.string());
+            BOOST_LOG_TRIVIAL(info) << "Preset::remove_files: marked " << this->name
+                                    << " for deletion, keeping .info file until sync confirmation";
+        } else {
+            // Local-only preset - safe to delete .info immediately
+            boost::nowide::remove(idx_path.string().c_str());
+        }
+    }
 }
 
 //BBS: add logic for only difference save
@@ -1717,7 +1728,7 @@ void PresetCollection::update_user_presets_directory(const std::string& dir_path
 }
 
 //BBS: save user presets to local
-void PresetCollection::save_user_presets(const std::string& dir_path, const std::string& type, std::vector<std::string>& need_to_delete_list)
+void PresetCollection::save_user_presets(const std::string& dir_path, const std::string& type, std::map<std::string, std::string>& need_to_delete_list)
 {
     boost::filesystem::path dir = boost::filesystem::absolute(boost::filesystem::path(dir_path) / type).make_preferred();
 

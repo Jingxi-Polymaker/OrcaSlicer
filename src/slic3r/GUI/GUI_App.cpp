@@ -5947,6 +5947,11 @@ void GUI_App::start_sync_user_preset(bool with_progress_dlg)
         };
     }
 
+    // Do a one-time scan for files that may be pending deletion (e.g., was deleted while not connected to internet)
+    // Scan for orphaned .info files on startup and add them to deletion queue
+    scan_orphaned_info_files();
+    process_delete_presets();
+
     m_sync_update_thread = Slic3r::create_thread(
         [this, progressFn, cancelFn, finishFn, t = std::weak_ptr<int>(m_user_sync_token)] {
             // get setting list, update setting list
@@ -6020,25 +6025,7 @@ void GUI_App::start_sync_user_preset(bool with_progress_dlg)
                             });
                         }
 
-                        unsigned int http_code = 200;
-
-                        /* get list witch need to be deleted*/
-                        std::vector<string> delete_cache_presets = get_delete_cache_presets_lock();
-                        for (auto it = delete_cache_presets.begin(); it != delete_cache_presets.end();) {
-                            if ((*it).empty()) continue;
-                            std::string del_setting_id = *it;
-                            int result = m_agent->delete_setting(del_setting_id);
-                            if (result == 0) {
-                                preset_deleted_from_cloud(del_setting_id);
-                                it = delete_cache_presets.erase(it);
-                                m_create_preset_blocked = { false, false, false, false, false, false };
-                                BOOST_LOG_TRIVIAL(trace) << "sync_preset: sync operation: delete success! setting id = " << del_setting_id;
-                            }
-                            else {
-                                BOOST_LOG_TRIVIAL(info) << "delete setting = " <<del_setting_id << " failed";
-                                it++;
-                            }
-                        }
+                        process_delete_presets();
                     }
                 } else {
                     boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
@@ -7041,27 +7028,123 @@ void GUI_App::load_current_presets(bool active_preset_combox/*= false*/, bool ch
 
 static std::mutex mutex_delete_cache_presets;
 
-std::vector<std::string> & GUI_App::get_delete_cache_presets()
+std::map<std::string, std::string> & GUI_App::get_delete_cache_presets()
 {
     return need_delete_presets;
 }
 
-std::vector<std::string> GUI_App::get_delete_cache_presets_lock()
+std::map<std::string, std::string> GUI_App::get_delete_cache_presets_lock()
 {
     std::scoped_lock l(mutex_delete_cache_presets);
     return need_delete_presets;
 }
 
-void GUI_App::delete_preset_from_cloud(std::string setting_id)
+void GUI_App::process_delete_presets()
+{
+    std::map<string, string> delete_cache_presets = get_delete_cache_presets_lock();
+    for (auto it = delete_cache_presets.begin(); it != delete_cache_presets.end();) {
+        if (it->first.empty()) continue;
+        std::string del_setting_id = it->first;
+        int result = m_agent->delete_setting(del_setting_id);
+        if (result == 0) {
+            preset_deleted_from_cloud(del_setting_id);
+            it = delete_cache_presets.erase(it);
+            m_create_preset_blocked = { false, false, false, false, false, false };
+            BOOST_LOG_TRIVIAL(trace) << "sync_preset: sync operation: delete success! setting id = " << del_setting_id;
+        }
+        else {
+            BOOST_LOG_TRIVIAL(info) << "delete setting = " <<del_setting_id << " failed";
+            it++;
+        }
+    }
+}
+
+void GUI_App::delete_preset_from_cloud(std::string setting_id, std::string preset_file_path)
 {
     std::scoped_lock l(mutex_delete_cache_presets);
-    need_delete_presets.push_back(setting_id);
+    fs::path info_path = fs::path(preset_file_path);
+    info_path.replace_extension("info");
+    need_delete_presets.emplace(setting_id, info_path.string());
 }
 
 void GUI_App::preset_deleted_from_cloud(std::string setting_id)
 {
     std::scoped_lock l(mutex_delete_cache_presets);
-    need_delete_presets.erase(std::remove(need_delete_presets.begin(), need_delete_presets.end(), setting_id), need_delete_presets.end());
+
+    // Get the preset info path BEFORE erasing from the map
+    std::string preset_file_path = need_delete_presets[setting_id];
+
+    // Delete the .info file after cloud deletion is confirmed
+    if (!preset_file_path.empty() && fs::exists(fs::path(preset_file_path))) {
+        boost::nowide::remove(preset_file_path.c_str());
+        BOOST_LOG_TRIVIAL(info) << "Deleted .info file after cloud confirmation: " << preset_file_path;
+    }
+
+    // Now erase from map
+    need_delete_presets.erase(setting_id);
+}
+
+// BBS: extract setting_id from .info file
+std::string GUI_App::extract_setting_id_from_info(const std::string& info_file_path)
+{
+    boost::nowide::ifstream file(info_file_path);
+    if (!file.is_open())
+        return "";
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.find("setting_id") == 0) {
+            size_t pos = line.find("=");
+            if (pos != std::string::npos) {
+                std::string setting_id = line.substr(pos + 1);
+                // Trim whitespace
+                setting_id.erase(0, setting_id.find_first_not_of(" \t"));
+                setting_id.erase(setting_id.find_last_not_of(" \t\r\n") + 1);
+                return setting_id;
+            }
+        }
+    }
+    return "";
+}
+
+// Scan for orphaned .info files on startup
+void GUI_App::scan_orphaned_info_files()
+{
+    // Get user preset directory
+    std::string user_sub_folder = app_config->get("preset_folder");
+    if (user_sub_folder.empty())
+        user_sub_folder = DEFAULT_USER_FOLDER_NAME;
+    const std::string dir_user_presets = data_dir() + "/" + PRESET_USER_DIR + "/" + user_sub_folder;
+
+    // Scan for orphaned .info files in each preset type directory
+    std::vector<std::string> preset_types = {PRESET_PRINT_NAME, PRESET_FILAMENT_NAME, PRESET_PRINTER_NAME};
+
+    for (const std::string& type : preset_types) {
+        fs::path type_dir = fs::path(dir_user_presets) / type;
+        if (!fs::exists(type_dir))
+            continue;
+
+        // Iterate through all .info files
+        for (auto& entry : boost::filesystem::directory_iterator(type_dir)) {
+            if (entry.path().extension() != ".info")
+                continue;
+
+            fs::path info_file = entry.path();
+            fs::path preset_file = info_file;
+            preset_file.replace_extension(".json");
+
+            // If .json doesn't exist, .info is orphaned
+            if (!fs::exists(preset_file)) {
+                // Extract setting_id from .info file
+                std::string setting_id = extract_setting_id_from_info(info_file.string());
+                if (!setting_id.empty()) {
+                    // Add to need_delete_presets
+                    delete_preset_from_cloud(setting_id, info_file.string());
+                    BOOST_LOG_TRIVIAL(info) << "Found orphaned .info file on startup: " << info_file.string();
+                }
+            }
+        }
+    }
 }
 
 wxString GUI_App::filter_string(wxString str)
