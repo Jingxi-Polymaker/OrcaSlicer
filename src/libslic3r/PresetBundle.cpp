@@ -876,6 +876,23 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
         }
     }
 
+    // Load individual presets from _local/individual directory
+    fs::path individual_dir(local_dir / PRESET_INDIVIDUAL_DIR);
+    if (fs::exists(individual_dir)) {
+        this->prints.load_presets(individual_dir.string(), PRESET_PRINT_NAME, substitutions, substitution_rule, [](Preset& preset) {
+            preset.bundle_id = "";
+            preset.is_from_bundle = true;
+        });
+        this->filaments.load_presets(individual_dir.string(), PRESET_FILAMENT_NAME, substitutions, substitution_rule, [](Preset& preset) {
+            preset.bundle_id = "";
+            preset.is_from_bundle = true;
+        });
+        this->printers.load_presets(individual_dir.string(), PRESET_PRINTER_NAME, substitutions, substitution_rule, [](Preset& preset) {
+            preset.bundle_id = "";
+            preset.is_from_bundle = true;
+        });
+    }
+
     // BBS do not load sla_print
     // BBS: change directoties by design
     try {
@@ -1037,12 +1054,15 @@ PresetsConfigSubstitutions PresetBundle::import_presets(std::vector<std::string>
             }
 
             // First, extract bundle_structure.json to get the bundle_id
+            // Track whether bundle_structure.json exists to determine routing
+            bool has_bundle_structure = false;
             BundleMetadata metadata;
             fs::path metadata_path = temp_folder / BUNDLE_STRUCTURE_JSON_NAME;
             status = mz_zip_reader_extract_file_to_file(&zip_archive, BUNDLE_STRUCTURE_JSON_NAME, encode_path(metadata_path.string().c_str()).c_str(), MZ_ZIP_FLAG_CASE_SENSITIVE);
             if (status) {
                 if (metadata.load_from_json(metadata_path.string())) {
                     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Found bundle_id: " << metadata.id << " from " << BUNDLE_STRUCTURE_JSON_NAME;
+                    has_bundle_structure = true;
                 }
             }
 
@@ -1052,8 +1072,17 @@ PresetsConfigSubstitutions PresetBundle::import_presets(std::vector<std::string>
                 BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " bundle_id was empty, so generating a UUID: " << metadata.id;
             }
 
-            // Build bundle directory path (will be used by import_json_presets)
-            fs::path bundle_base_dir(user_folder / user_id / PRESET_LOCAL_DIR / metadata.id);
+            // Build bundle directory path based on whether bundle_structure.json was present
+            fs::path bundle_base_dir;
+            if (has_bundle_structure) {
+                // Use the bundle ID from metadata when bundle_structure.json exists
+                bundle_base_dir = user_folder / user_id / PRESET_LOCAL_DIR / metadata.id;
+            } else {
+                // Route to individual directory when no bundle_structure.json
+                bundle_base_dir = user_folder / user_id / PRESET_LOCAL_DIR / PRESET_INDIVIDUAL_DIR;
+                BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " No bundle_structure.json found, routing to individual directory: " << bundle_base_dir.string();
+            }
+            
             if (!fs::exists(bundle_base_dir))
                 fs::create_directories(bundle_base_dir, ec);
             if (ec)
@@ -1091,15 +1120,18 @@ PresetsConfigSubstitutions PresetBundle::import_presets(std::vector<std::string>
                 metadata.imported_time = std::time(nullptr);
             }
 
-            // Save metadata to bundle_metadata.json
-            fs::path metadata_save_path = bundle_base_dir / PRESET_BUNDLE_METADATA;
-            if (metadata.save_to_json(metadata_save_path.string())) {
-                BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Saved bundle metadata to: " << metadata_save_path.string();
+            // Only save bundle_metadata.json for bundles (when bundle_structure.json was present)
+            if (has_bundle_structure) {
+                // Save metadata to bundle_metadata.json
+                fs::path metadata_save_path = bundle_base_dir / PRESET_BUNDLE_METADATA;
+                if (metadata.save_to_json(metadata_save_path.string())) {
+                    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Saved bundle metadata to: " << metadata_save_path.string();
 
-                // Store the bundle metadata in m_bundles for tracking
-                m_bundles[metadata.id] = metadata;
-            } else {
-                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to save bundle metadata to: " << metadata_save_path.string();
+                    // Store the bundle metadata in m_bundles for tracking
+                    m_bundles[metadata.id] = metadata;
+                } else {
+                    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to save bundle metadata to: " << metadata_save_path.string();
+                }
             }
 
             fclose(zipFile);
