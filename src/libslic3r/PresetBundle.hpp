@@ -141,7 +141,7 @@ public:
                                                    ForwardCompatibilitySubstitutionRule    rule,
                                                    int &                                   overwrite,
                                                    std::vector<std::string> &              result,
-                                                   const std::string &                     bundle_id = "");
+                                                   const std::string &                     bundle_dir = "");
     void save_user_presets(AppConfig& config, std::vector<std::string>& need_to_delete_list);
     void remove_users_preset(AppConfig &config, std::map<std::string, std::map<std::string, std::string>> * my_presets = nullptr);
     void update_user_presets_directory(const std::string preset_folder);

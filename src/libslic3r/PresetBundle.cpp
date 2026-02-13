@@ -1052,6 +1052,13 @@ PresetsConfigSubstitutions PresetBundle::import_presets(std::vector<std::string>
                 BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " bundle_id was empty, so generating a UUID: " << metadata.id;
             }
 
+            // Build bundle directory path (will be used by import_json_presets)
+            fs::path bundle_base_dir(user_folder / user_id / PRESET_LOCAL_DIR / metadata.id);
+            if (!fs::exists(bundle_base_dir))
+                fs::create_directories(bundle_base_dir, ec);
+            if (ec)
+                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to create bundle directory: " << bundle_base_dir.string() << " error: " << ec.message();
+
             // Extract Files
             int num_files = mz_zip_reader_get_num_files(&zip_archive);
             for (int i = 0; i < num_files; i++) {
@@ -1073,19 +1080,11 @@ PresetsConfigSubstitutions PresetBundle::import_presets(std::vector<std::string>
                     if (MZ_FALSE == status) {
                         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Failed to open target file: " << target_file_path;
                     } else {
-                        bool is_success = import_json_presets(substitutions, target_file_path, override_confirm, rule, overwrite, result, metadata.id);
+                        bool is_success = import_json_presets(substitutions, target_file_path, override_confirm, rule, overwrite, result, bundle_base_dir.string());
                         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " import target file: " << target_file_path << " import result" << is_success;
                     }
                 }
             }
-
-            // Save the metadata file
-            // Build bundle directory path (same as in import_json_presets)
-            fs::path bundle_base_dir(user_folder / user_id / PRESET_LOCAL_DIR / metadata.id);
-            if (!fs::exists(bundle_base_dir))
-                fs::create_directories(bundle_base_dir, ec);
-            if (ec)
-                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to create bundle directory: " << bundle_base_dir.string() << " error: " << ec.message();
 
             // Set imported_time to current time if not already set
             if (metadata.imported_time == 0) {
@@ -1118,7 +1117,7 @@ bool PresetBundle::import_json_presets(PresetsConfigSubstitutions &            s
                                        ForwardCompatibilitySubstitutionRule    rule,
                                        int &                                   overwrite,
                                        std::vector<std::string> &              result,
-                                       const std::string &                     bundle_id)
+                                       const std::string &                     bundle_dir)
 {
     try {
         DynamicPrintConfig config;
@@ -1211,11 +1210,11 @@ bool PresetBundle::import_json_presets(PresetsConfigSubstitutions &            s
             substitutions.push_back({name, collection->type(), PresetConfigSubstitutions::Source::UserFile, file, std::move(config_substitutions)});
         collection->set_custom_preset_alias(preset);
 
-        // If bundle_id is provided, temporarily change directory path for save operation
-        if (!bundle_id.empty()) {
-            // Construct bundle directory path using DEFAULT_USER_FOLDER_NAME
+        // If bundle_dir is provided, use it for the save operation
+        if (!bundle_dir.empty()) {
+            // Use the passed bundle directory directly
             fs::path original_dir_path(collection->m_dir_path);
-            fs::path bundle_base_dir(original_dir_path.parent_path() / PRESET_LOCAL_DIR / bundle_id);
+            fs::path bundle_base_dir(bundle_dir);
 
             // Create bundle directory if it doesn't exist
             boost::system::error_code ec;
@@ -1230,6 +1229,9 @@ bool PresetBundle::import_json_presets(PresetsConfigSubstitutions &            s
                 fs::create_directory(type_dir, ec);
             if (ec)
                 BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to create type directory: " << type_dir.string() << " error: " << ec.message();
+
+            // Extract bundle_id from the bundle directory path for the preset attribute
+            std::string bundle_id = bundle_base_dir.filename().string();
 
             // Set bundle attributes on the preset
             preset.bundle_id = bundle_id;
@@ -4675,7 +4677,7 @@ bool BundleMetadata::load_from_json(const std::string& path)
         if (j.contains("id")) this->id = j["id"].get<std::string>();
 
         if (j.contains("name")) this->name = j["name"].get<std::string>();
-        else if (j.contains("bundle_id")) this->id = j["bundle_id"].get<std::string>();                 // backwards compat w bundle_structure.json
+        else if (j.contains("bundle_id")) this->name = j["bundle_id"].get<std::string>();                 // backwards compat w bundle_structure.json
 
         if (j.contains("version")) this->version = j["version"].get<std::string>();
 
