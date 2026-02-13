@@ -1134,6 +1134,8 @@ void PlaterPresetComboBox::update()
     std::map<wxString, wxBitmap*> nonsys_presets;
     //BBS: add project embedded presets logic
     std::map<wxString, wxBitmap*>  project_embedded_presets;
+    // ORCA: add bundle presets
+    std::map<wxString, wxBitmap*> bundle_presets;
     std::map<wxString, wxBitmap *> system_presets;
     std::map<wxString, wxBitmap *>  uncompatible_presets;
     std::unordered_set<std::string> system_printer_models;
@@ -1141,9 +1143,11 @@ void PlaterPresetComboBox::update()
     std::map<wxString, std::string> preset_filament_vendors;
     std::map<wxString, std::string> preset_filament_types;
     std::map<wxString, std::string> preset_filament_names; // ORCA
+    std::map<wxString, std::string> preset_bundle_names;
     //BBS:  move system to the end
     wxString selected_system_preset;
     wxString selected_user_preset;
+    wxString selected_bundle_preset;
     wxString tooltip;
     const std::deque<Preset>& presets = m_collection->get_presets();
 
@@ -1172,6 +1176,15 @@ void PlaterPresetComboBox::update()
 
         bool single_bar = false;
         wxString name = get_preset_name(preset);
+
+        // Track bundle names for bundled presets
+        if (preset.is_from_bundle && !preset.bundle_id.empty()) {
+            auto bundle_it = m_preset_bundle->m_bundles.find(preset.bundle_id);
+            if (bundle_it != m_preset_bundle->m_bundles.end()) {
+                preset_bundle_names[name] = bundle_it->second.name;
+            }
+        }
+
         if (m_type == Preset::TYPE_FILAMENT)
         {
 #if 0
@@ -1237,6 +1250,15 @@ void PlaterPresetComboBox::update()
                 tooltip = wxString::FromUTF8(preset.name.c_str());
             }
         }
+        // ORCA: add bundle presets
+        else if (preset.is_from_bundle)
+        {
+            bundle_presets.emplace(name, bmp);
+            if (is_selected) {
+                selected_bundle_preset = name;
+                tooltip = get_tooltip(preset);
+            }
+        }
         else
         {
             nonsys_presets.emplace(name, bmp);
@@ -1262,7 +1284,7 @@ void PlaterPresetComboBox::update()
                                                 "Bambu PLA Galaxy", "Bambu PLA Metal", "Bambu PLA Marble", "Bambu PETG-CF", "Bambu PETG Translucent", "Bambu ABS-GF"};
     std::vector<std::string> first_vendors     = {"", "Bambu", "Generic"}; // Empty vendor for non-system presets
     std::vector<std::string> first_types     = {"PLA", "PETG", "ABS", "TPU"};
-    auto  add_presets       = [this, &preset_descriptions, &filament_orders, &preset_filament_vendors, &first_vendors, &preset_filament_types, &preset_filament_names, &first_types, &selected_in_ams]
+    auto  add_presets       = [this, &preset_descriptions, &filament_orders, &preset_filament_vendors, &first_vendors, &preset_filament_types, &preset_filament_names, &preset_bundle_names, &first_types, &selected_in_ams]
             (std::map<wxString, wxBitmap *> const &presets, wxString const &selected, std::string const &group, wxString const &groupName) {
         if (!presets.empty()) {
             set_label_marker(Append(_L(group), wxNullBitmap, DD_ITEM_STYLE_SPLIT_ITEM));
@@ -1297,8 +1319,9 @@ void PlaterPresetComboBox::update()
                         return l->first < r->first;
                     });
                 // ORCA add sorting support for vendor / type for user presets. also non grouped items
-                if (groupName == "by_vendor" || groupName == "by_type" || groupName == ""){
-                    auto by = groupName == "by_vendor" ? preset_filament_vendors
+                if (groupName == "by_bundle" || groupName == "by_vendor" || groupName == "by_type" || groupName == ""){
+                    auto by = groupName == "by_bundle" ? preset_bundle_names
+                            : groupName == "by_vendor" ? preset_filament_vendors
                             : groupName == "by_type"   ? preset_filament_types
                             : preset_filament_names;
                     std::sort(list.begin(), list.end(), [&by](auto *l, auto *r) {
@@ -1317,9 +1340,10 @@ void PlaterPresetComboBox::update()
                 bool unsupported = group == "Unsupported presets";
                 for (auto it : list) {
                     // ORCA add sorting support for vendor / type for user presets
-                    auto groupName2 = groupName == "by_type"   ? (preset_filament_types[it->first].empty()   ? _L("Unspecified") : preset_filament_types[it->first])
-                                    : groupName == "by_vendor" ? (preset_filament_vendors[it->first].empty() ? _L("Unspecified") : preset_filament_vendors[it->first])
-                                    : groupByGroup             ? groupName
+                    auto groupName2 = groupName == "by_bundle"   ? (preset_bundle_names[it->first].empty()     ? _L("Unspecified")   : preset_bundle_names[it->first])
+                                    : groupName == "by_type"     ? (preset_filament_types[it->first].empty()   ? _L("Unspecified") : preset_filament_types[it->first])
+                                    : groupName == "by_vendor"   ? (preset_filament_vendors[it->first].empty() ? _L("Unspecified") : preset_filament_vendors[it->first])
+                                    : groupByGroup               ? groupName
                                     : preset_filament_vendors[it->first];
                     int  index = Append(it->first, *it->second, groupName2, nullptr, unsupported ? DD_ITEM_STYLE_DISABLED : 0);
                     if (unsupported)
@@ -1351,6 +1375,7 @@ void PlaterPresetComboBox::update()
                                    : group_filament_presets  == "3" ? "by_vendor"          // Create sub menus with filament vendor
                                    : "";                                                   // Use without sub menu
     add_presets(nonsys_presets, selected_user_preset, L("User presets"), group_filament_presets_by);
+    add_presets(bundle_presets, selected_bundle_preset, L("Bundle presets"), "by_bundle");
     // BBS: move system to the end
     add_presets(system_presets, selected_system_preset, L("System presets"), _L("System"));
     add_presets(uncompatible_presets, {}, L("Unsupported presets"), _L("Unsupported") + " ");

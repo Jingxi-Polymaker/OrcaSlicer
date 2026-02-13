@@ -72,6 +72,26 @@ struct FilamentBaseInfo
     int  filament_printable = 3;
 };
 
+// Orca: Bundle metadata structure for imported preset bundles
+struct BundleMetadata
+{
+    std::string                     id;         // Bundle ID: UUID (OrcaCloud) or name+timestamp (external)
+    std::string                     name;       // Display name
+    std::string                     version;    // Bundle version
+    std::string                     description;
+    std::string                     author;
+    long long                       imported_time{0};
+    long long                       updated_time{0};
+
+    // Cached preset names by type (populated on load)
+    std::vector<std::string>        print_presets;
+    std::vector<std::string>        filament_presets;
+    std::vector<std::string>        printer_presets;
+
+    bool load_from_json(const std::string& path);
+    bool save_to_json(const std::string& path) const;
+};
+
 // Bundle of Print + Filament + Printer presets.
 class PresetBundle
 {
@@ -114,13 +134,14 @@ public:
     // BBS Load user presets
     PresetsConfigSubstitutions load_user_presets(std::string user, ForwardCompatibilitySubstitutionRule rule);
     PresetsConfigSubstitutions load_user_presets(AppConfig &config, std::map<std::string, std::map<std::string, std::string>>& my_presets, ForwardCompatibilitySubstitutionRule rule);
-    PresetsConfigSubstitutions import_presets(std::vector<std::string> &files, std::function<int(std::string const &)> override_confirm, ForwardCompatibilitySubstitutionRule rule);
+    PresetsConfigSubstitutions import_presets(std::vector<std::string> &files, std::function<int(std::string const &)> override_confirm, ForwardCompatibilitySubstitutionRule rule, AppConfig& config);
     bool                       import_json_presets(PresetsConfigSubstitutions &            substitutions,
                                                    std::string &                           file,
                                                    std::function<int(std::string const &)> override_confirm,
                                                    ForwardCompatibilitySubstitutionRule    rule,
                                                    int &                                   overwrite,
-                                                   std::vector<std::string> &              result);
+                                                   std::vector<std::string> &              result,
+                                                   const std::string &                     bundle_dir = "");
     void save_user_presets(AppConfig& config, std::map<std::string, std::string>& need_to_delete_list);
     void remove_users_preset(AppConfig &config, std::map<std::string, std::map<std::string, std::string>> * my_presets = nullptr);
     void update_user_presets_directory(const std::string preset_folder);
@@ -232,6 +253,9 @@ public:
     // Orca: for OrcaFilamentLibrary
     std::map<std::string, DynamicPrintConfig> m_config_maps;
     std::map<std::string, std::string> m_filament_id_maps;
+
+    // Orca: Bundle metadata and cached preset names
+    std::map<std::string, BundleMetadata>  m_bundles;
 
         struct ObsoletePresets
     {

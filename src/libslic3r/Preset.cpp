@@ -581,6 +581,8 @@ void Preset::save(DynamicPrintConfig* parent_config)
         from_str = std::string("User");
     else if (this->is_project_embedded)
         from_str = std::string("Project");
+    else if (this->is_from_bundle)
+        from_str = std::string("Bundle");
     else if (this->is_system)
         from_str = std::string("System");
     else
@@ -1215,7 +1217,8 @@ void PresetCollection::add_default_preset(const std::vector<std::string> &keys, 
 // Throws an exception on error.
 void PresetCollection::load_presets(
     const std::string &dir_path, const std::string &subdir,
-    PresetsConfigSubstitutions& substitutions, ForwardCompatibilitySubstitutionRule substitution_rule)
+    PresetsConfigSubstitutions& substitutions, ForwardCompatibilitySubstitutionRule substitution_rule,
+    std::function<void(Preset&)> preset_loaded_fn)
 {
     // Don't use boost::filesystem::canonical() on Windows, it is broken in regard to reparse points,
     // see https://github.com/prusa3d/PrusaSlicer/issues/732
@@ -1388,6 +1391,9 @@ void PresetCollection::load_presets(
                     if (fs::exists(file_path))
                         fs::remove(file_path);
                 }
+
+                if (preset_loaded_fn != nullptr)
+                    preset_loaded_fn(preset);
 
                 presets_loaded.emplace_back(preset);
                 BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << " load config successful and preset name is:" << preset.name;

@@ -29,6 +29,11 @@
 #define PRESET_TEMPLATE_DIR "Template"
 #define PRESET_CUSTOM_VENDOR "Custom"
 
+// Orca: bundle import directories
+#define PRESET_LOCAL_DIR          "_local"
+#define PRESET_INDIVIDUAL_DIR     "individual"
+#define PRESET_BUNDLE_METADATA    "bundle_metadata.json"
+
 //BBS: iot preset type strings
 #define PRESET_IOT_PRINTER_TYPE     "printer"
 #define PRESET_IOT_FILAMENT_TYPE    "filament"
@@ -261,6 +266,10 @@ public:
     // Orca: flag to indicate if this preset is from Orca Filament Library
     bool m_from_orca_filament_lib = false;
 
+    // Orca: bundle tracking - imported preset bundles
+    std::string         bundle_id;       // Bundle ID: UUID (OrcaCloud) or name+timestamp (external)
+    bool                is_from_bundle = false;  // TRUE if imported from bundle
+
     //BBS
     Semver              version;         // version of preset
     std::string         ini_str;         // ini string of preset
@@ -471,7 +480,7 @@ public:
     void            add_default_preset(const std::vector<std::string> &keys, const Slic3r::StaticPrintConfig &defaults, const std::string &preset_name);
 
     // Load ini files of the particular type from the provided directory path.
-    void            load_presets(const std::string &dir_path, const std::string &subdir, PresetsConfigSubstitutions& substitutions, ForwardCompatibilitySubstitutionRule rule);
+    void            load_presets(const std::string &dir_path, const std::string &subdir, PresetsConfigSubstitutions& substitutions, ForwardCompatibilitySubstitutionRule rule, std::function<void(Preset&)> preset_loaded_fn = nullptr);
 
     //BBS: update user presets directory
     void            update_user_presets_directory(const std::string& dir_path, const std::string& type);
