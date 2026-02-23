@@ -1873,12 +1873,14 @@ bool PresetCollection::load_user_preset(std::string name, std::map<std::string, 
         if (inherits_config) {
             ConfigOptionString * option_str = dynamic_cast<ConfigOptionString *> (inherits_config);
             std::string inherits_value = option_str->value;
-            /*size_t pos = inherits_value.find_first_of('*');
-            if (pos != std::string::npos) {
-                inherits_value.replace(pos, 1, 1, '~');
-                option_str->value = inherits_value;
-            }*/
-            inherit_preset = this->find_preset(inherits_value, false, true);
+            inherit_preset = this->find_preset2(inherits_value, true);
+
+            // Final fallback and try to load inherit profiles from resources
+            if (inherit_preset == nullptr) {
+                unlock();
+                inherit_preset = find_and_load_unloaded_system_preset(inherits_value);
+                lock();
+            }
         }
         const Preset& default_preset = this->default_preset_for(cloud_config);
         if (inherit_preset) {
@@ -2735,6 +2737,142 @@ Preset* PresetCollection::find_preset(const std::string &name, bool first_visibl
     // Ensure that a temporary copy is returned if the preset found is currently selected.
     return (it != m_presets.end() && it->name == key.name) ? &this->preset(it - m_presets.begin(), real) :
         first_visible_if_not_found ? &this->first_visible() : nullptr;
+}
+
+// Helper function to find and load an unloaded system preset
+// Searches through vendor JSON files in the resources/profiles directory for the preset name
+// and loads it if found. Returns nullptr if not found.
+Preset* PresetCollection::find_and_load_unloaded_system_preset(const std::string& name)
+{
+    namespace fs = boost::filesystem;
+    using json = nlohmann::json;
+
+    // Get the resources preset directory (contains all bundled vendor profiles)
+    fs::path system_dir = fs::path(Slic3r::resources_dir()) / PRESET_PROFILES_DIR;
+    if (!fs::exists(system_dir) || !fs::is_directory(system_dir)) {
+        BOOST_LOG_TRIVIAL(debug) << __FUNCTION__ << " Resources profiles directory does not exist: " << system_dir.string();
+        return nullptr;
+    }
+
+    // Determine which preset list key to search for based on type
+    const char* preset_list_key = nullptr;
+    if (m_type == Preset::TYPE_PRINT)
+        preset_list_key = BBL_JSON_KEY_PROCESS_LIST;
+    else if (m_type == Preset::TYPE_FILAMENT)
+        preset_list_key = BBL_JSON_KEY_FILAMENT_LIST;
+    else if (m_type == Preset::TYPE_PRINTER)
+        preset_list_key = BBL_JSON_KEY_MACHINE_LIST;
+    else {
+        // Not supported for other types
+        return nullptr;
+    }
+
+    // Iterate through vendor JSON files in the system directory
+    try {
+        for (auto& dir_entry : fs::directory_iterator(system_dir)) {
+            std::string vendor_file = dir_entry.path().string();
+            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Checking vendor: " << vendor_file;
+            if (!Slic3r::is_json_file(vendor_file))
+                continue;
+
+            // Get vendor name (filename without .json extension)
+            std::string vendor_name = dir_entry.path().filename().string();
+            vendor_name.erase(vendor_name.size() - 5); // Remove ".json"
+
+            try {
+                // Load and parse the vendor JSON file
+                boost::nowide::ifstream ifs(vendor_file);
+                json j;
+                ifs >> j;
+
+                // Check if the preset list key exists
+                if (!j.contains(preset_list_key))
+                    continue;
+
+                auto& preset_list = j[preset_list_key];
+                if (!preset_list.is_array())
+                    continue;
+
+                // Search for the preset in the list
+                for (auto& preset_entry : preset_list) {
+                    if (!preset_entry.is_object())
+                        continue;
+
+                    // Get the preset name
+                    std::string preset_name;
+                    if (preset_entry.contains(BBL_JSON_KEY_NAME) && preset_entry[BBL_JSON_KEY_NAME].is_string())
+                        preset_name = preset_entry[BBL_JSON_KEY_NAME].get<std::string>();
+
+                    if (preset_name != name) {
+                        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Checking " << preset_name << " against " << name;
+                        continue;
+                    }
+
+                    // Found the preset! Get the subpath
+                    if (!preset_entry.contains(BBL_JSON_KEY_SUB_PATH) || !preset_entry[BBL_JSON_KEY_SUB_PATH].is_string()) {
+                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << " Preset " << name << " found in " << vendor_file << " but has no sub_path";
+                        continue;
+                    }
+
+                    std::string subpath = preset_entry[BBL_JSON_KEY_SUB_PATH].get<std::string>();
+                    fs::path preset_file_path = fs::path(vendor_file).parent_path() / vendor_name / subpath;
+
+                    if (!fs::exists(preset_file_path)) {
+                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << " Preset file does not exist: " << preset_file_path.string();
+                        continue;
+                    }
+
+                    // Load the preset from the file
+                    try {
+                        DynamicPrintConfig config;
+                        std::map<std::string, std::string> key_values;
+                        std::string reason;
+                        Semver file_version;
+
+                        // Load from JSON file
+                        ConfigSubstitutions config_substitutions = config.load_from_json(preset_file_path.string(), ForwardCompatibilitySubstitutionRule::EnableSilent, key_values, reason);
+
+                        // Try to get version from key_values
+                        if (key_values.find(BBL_JSON_KEY_VERSION) != key_values.end()) {
+                            file_version = Semver::parse(key_values[BBL_JSON_KEY_VERSION]).value_or(Semver());
+                        }
+
+                        // Load the preset into the collection
+                        Preset& loaded_preset = this->load_preset(preset_file_path.string(), name, config, false, file_version);
+                        loaded_preset.is_system = true;
+                        loaded_preset.loaded = true;
+
+                        // Set additional metadata from key_values
+                        if (key_values.find(BBL_JSON_KEY_SETTING_ID) != key_values.end())
+                            loaded_preset.setting_id = key_values[BBL_JSON_KEY_SETTING_ID];
+                        if (key_values.find(BBL_JSON_KEY_FILAMENT_ID) != key_values.end())
+                            loaded_preset.filament_id = key_values[BBL_JSON_KEY_FILAMENT_ID];
+                        if (key_values.find(BBL_JSON_KEY_BASE_ID) != key_values.end())
+                            loaded_preset.base_id = key_values[BBL_JSON_KEY_BASE_ID];
+
+                        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Successfully loaded unloaded system preset: " << name
+                                                  << " from " << preset_file_path.string();
+
+                        return &loaded_preset;
+
+                    } catch (const std::exception& e) {
+                        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to load preset from " << preset_file_path.string()
+                                                   << ": " << e.what();
+                        continue;
+                    }
+                }
+
+            } catch (const std::exception& e) {
+                BOOST_LOG_TRIVIAL(debug) << __FUNCTION__ << " Failed to parse vendor JSON " << vendor_file
+                                            << ": " << e.what();
+                continue;
+            }
+        }
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Error iterating system directory: " << e.what();
+    }
+
+    return nullptr;
 }
 
 Preset* PresetCollection::find_preset2(const std::string& name, bool auto_match/* = true */)
