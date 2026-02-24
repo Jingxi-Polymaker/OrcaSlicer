@@ -646,6 +646,10 @@ public:
     {
         return const_cast<PresetCollection*>(this)->find_preset2(name, auto_match);
     }
+    // Orca: helper function to find and load an unloaded system preset from the system directory
+    // If app_config is provided, the preset will be marked as installed for future startup loading
+    Preset* find_and_load_unloaded_system_preset(const std::string& name);
+    
     size_t first_visible_idx() const;
     // Return the index of the first visible, compatible, system base preset
     // matching the given filament_type.  Falls back to base type, then any visible.
