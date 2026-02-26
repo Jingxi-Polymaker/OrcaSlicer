@@ -16,8 +16,9 @@ class wxSecretStore;
 
 namespace Slic3r {
 
-// Forward declaration
+// Forward declarations
 class AppConfig;
+struct BundleMetadata;
 
 // Constants for OAuth loopback server
 namespace auth_constants {
@@ -244,6 +245,13 @@ public:
     void save_sync_state();
     void clear_sync_state();
     const SyncState& get_sync_state() const { return sync_state; }
+
+    // ========================================================================
+    // Orca-Specific: Bundle Subscription
+    // ========================================================================
+    int get_subscribed_bundles(std::vector<BundleMetadata>* bundles);
+    int get_bundle_presets(const std::string& bundle_id, std::map<std::string, std::map<std::string, std::string>>* presets);
+    int get_all_subscribed_bundles_presets(std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>* bundle_presets);
 
     // ========================================================================
     // Additional Public Methods - Auth

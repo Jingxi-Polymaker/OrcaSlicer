@@ -5750,11 +5750,26 @@ void  GUI_App::push_notification(const MachineObject* obj, wxString msg, wxStrin
 void GUI_App::reload_settings()
 {
     if (preset_bundle && m_agent) {
+        // Load user's personal presets
         std::map<std::string, std::map<std::string, std::string>> user_presets;
         m_agent->get_user_presets(&user_presets);
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << " cloud user preset number is: " << user_presets.size();
         preset_bundle->load_user_presets(*app_config, user_presets, ForwardCompatibilitySubstitutionRule::Enable);
         preset_bundle->save_user_presets(*app_config, get_delete_cache_presets());
+
+        // Import subscribed bundle presets (Orca Cloud only)
+        if (m_agent->get_provider() == CloudAgentProvider::Orca) {
+            auto orca_agent = std::dynamic_pointer_cast<OrcaCloudServiceAgent>(m_agent->get_cloud_agent());
+            std::map<std::string, std::map<std::string, std::map<std::string, std::string>>> subscribed_bundle_presets;
+            int subscribed_result = orca_agent->get_all_subscribed_bundles_presets(&subscribed_bundle_presets);
+            if (subscribed_result == 0) {
+                BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << " subscribed bundle preset number is: " << subscribed_bundle_presets.size();
+                preset_bundle->import_subscribed_presets(*app_config, subscribed_bundle_presets, ForwardCompatibilitySubstitutionRule::Enable);
+            } else {
+                BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << __LINE__ << " failed to import subscribed bundles, result: " << subscribed_result;
+            }
+        }
+
         mainframe->update_side_preset_ui();
     }
 }
