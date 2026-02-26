@@ -1614,6 +1614,9 @@ void TabPresetComboBox::update()
     std::map<wxString, std::pair<wxBitmap*, bool>>  project_embedded_presets;
     //BBS:  move system to the end
     std::map<wxString, std::pair<wxBitmap*, bool>>  system_presets;
+    // ORCA: add bundle presets
+    std::map<wxString, std::pair<wxBitmap*, bool>>  bundle_presets;
+    std::map<wxString, wxString>                    preset_bundle_names;
     std::map<wxString, wxString>                    preset_descriptions;
 
     wxString selected = "";
@@ -1645,6 +1648,14 @@ void TabPresetComboBox::update()
         if (preset.is_system)
             preset_descriptions.emplace(name, from_u8(preset.description));
 
+        // ORCA: Track bundle names for bundled presets
+        if (preset.is_from_bundle && !preset.bundle_id.empty()) {
+            auto bundle_it = m_preset_bundle->m_bundles.find(preset.bundle_id);
+            if (bundle_it != m_preset_bundle->m_bundles.end()) {
+                preset_bundle_names[name] = bundle_it->second.name;
+            }
+        }
+
         if (preset.is_default || preset.is_system) {
             //BBS: move system to the end
             system_presets.emplace(name, std::pair<wxBitmap *, bool>(bmp, is_enabled));
@@ -1660,6 +1671,13 @@ void TabPresetComboBox::update()
         {
             //std::pair<wxBitmap*, bool> pair(bmp, is_enabled);
             project_embedded_presets.emplace(name, std::pair<wxBitmap *, bool>(bmp, is_enabled));
+            if (i == idx_selected)
+                selected = name;
+        }
+        // ORCA: add bundle presets
+        else if (preset.is_from_bundle)
+        {
+            bundle_presets.emplace(name, std::pair<wxBitmap*, bool>(bmp, is_enabled));
             if (i == idx_selected)
                 selected = name;
         }
@@ -1695,6 +1713,19 @@ void TabPresetComboBox::update()
     {
         set_label_marker(Append(_L("User presets"), wxNullBitmap, DD_ITEM_STYLE_SPLIT_ITEM));
         for (std::map<wxString, std::pair<wxBitmap*, bool>>::iterator it = nonsys_presets.begin(); it != nonsys_presets.end(); ++it) {
+            int item_id = Append(it->first, *it->second.first);
+            SetItemTooltip(item_id, preset_descriptions[it->first]);
+            bool is_enabled = it->second.second;
+            if (!is_enabled)
+                set_label_marker(item_id, LABEL_ITEM_DISABLED);
+            validate_selection(it->first == selected);
+        }
+    }
+    // ORCA: add bundle presets
+    if (!bundle_presets.empty())
+    {
+        set_label_marker(Append(_L("Bundle presets"), wxNullBitmap, DD_ITEM_STYLE_SPLIT_ITEM));
+        for (std::map<wxString, std::pair<wxBitmap*, bool>>::iterator it = bundle_presets.begin(); it != bundle_presets.end(); ++it) {
             int item_id = Append(it->first, *it->second.first);
             SetItemTooltip(item_id, preset_descriptions[it->first]);
             bool is_enabled = it->second.second;
