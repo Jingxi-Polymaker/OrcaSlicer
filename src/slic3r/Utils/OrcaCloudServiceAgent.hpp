@@ -250,8 +250,10 @@ public:
     // Orca-Specific: Bundle Subscription
     // ========================================================================
     int get_subscribed_bundles(std::vector<BundleMetadata>* bundles);
-    int get_bundle_presets(const std::string& bundle_id, std::map<std::string, std::map<std::string, std::string>>* presets);
-    int get_all_subscribed_bundles_presets(std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>* bundle_presets);
+    int get_shared_bundle(const std::string& bundle_id, std::map<std::string, std::map<std::string, std::string>>* presets, BundleMetadata* bundle_metadata);
+    int get_all_subscribed_bundles_presets(
+        std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>* bundle_presets,
+        std::map<std::string, BundleMetadata>* bundle_metadata);
 
     // ========================================================================
     // Additional Public Methods - Auth

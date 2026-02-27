@@ -2648,31 +2648,15 @@ int OrcaCloudServiceAgent::get_subscribed_bundles(std::vector<BundleMetadata>* b
     try {
         auto json = nlohmann::json::parse(response_body);
 
-        if (!json.contains("bundles") || !json["bundles"].is_array()) {
+        if (!json.contains("data") || !json["data"].is_array()) {
             BOOST_LOG_TRIVIAL(error) << "get_subscribed_bundles: invalid response format";
-
-            // TEMPORARY DEBUG ONLY
-            {
-                BundleMetadata data;
-                data.id = "8563a3e3-00cf-4cd0-812b-acf99b5248bf";
-                data.version = "1.0.0";
-                bundles->push_back(data);
-
-                return 0;
-            }
-
             return -1;
         }
 
-        for (const auto& bundle_json : json["bundles"]) {
+        for (const auto& bundle_json : json["data"]) {
             BundleMetadata metadata;
             if (bundle_json.contains("id")) metadata.id = bundle_json["id"].get<std::string>();
-            if (bundle_json.contains("name")) metadata.name = bundle_json["name"].get<std::string>();
             if (bundle_json.contains("version")) metadata.version = bundle_json["version"].get<std::string>();
-            if (bundle_json.contains("description")) metadata.description = bundle_json["description"].get<std::string>();
-            if (bundle_json.contains("author")) metadata.author = bundle_json["author"].get<std::string>();
-            if (bundle_json.contains("updated_time")) metadata.updated_time = bundle_json["updated_time"].get<long long>();
-
             bundles->push_back(metadata);
         }
 
@@ -2685,7 +2669,7 @@ int OrcaCloudServiceAgent::get_subscribed_bundles(std::vector<BundleMetadata>* b
     }
 }
 
-int OrcaCloudServiceAgent::get_bundle_presets(const std::string& bundle_id, std::map<std::string, std::map<std::string, std::string>>* presets)
+int OrcaCloudServiceAgent::get_shared_bundle(const std::string& bundle_id, std::map<std::string, std::map<std::string, std::string>>* presets, BundleMetadata* bundle_metadata)
 {
     if (!presets) return -1;
 
@@ -2697,7 +2681,7 @@ int OrcaCloudServiceAgent::get_bundle_presets(const std::string& bundle_id, std:
     int result = http_get(path, &response_body, &http_code);
 
     if (result != 0 || http_code != 200) {
-        BOOST_LOG_TRIVIAL(error) << "get_bundle_presets failed: bundle_id=" << bundle_id
+        BOOST_LOG_TRIVIAL(error) << "get_shared_bundle failed: bundle_id=" << bundle_id
                                  << ", http_code=" << http_code;
         return result != 0 ? result : http_code;
     }
@@ -2706,11 +2690,19 @@ int OrcaCloudServiceAgent::get_bundle_presets(const std::string& bundle_id, std:
     try {
         auto json = nlohmann::json::parse(response_body);
 
-        BOOST_LOG_TRIVIAL(info) << "get_bundle_presets: response: " << response_body;
-        BOOST_LOG_TRIVIAL(info) << "get_bundle_presets: shared_profile: " << json["shared_profiles"];
+        BOOST_LOG_TRIVIAL(info) << "get_shared_bundle: response: " << response_body;
+        BOOST_LOG_TRIVIAL(info) << "get_shared_bundle: shared_profile: " << json["shared_profiles"];
+
+        // Parse the bundle metadata
+        if (json.contains("id")) bundle_metadata->id = json["id"].get<std::string>();
+        if (json.contains("name")) bundle_metadata->name = json["name"].get<std::string>();
+        if (json.contains("version")) bundle_metadata->version = json["version"].get<std::string>();
+        if (json.contains("description")) bundle_metadata->description = json["description"].get<std::string>();
+        if (json.contains("author")) bundle_metadata->author = json["author"].get<std::string>();
+        if (json.contains("updated_time")) bundle_metadata->updated_time = json["updated_time"].get<long long>();
 
         if (!json.contains("shared_profiles") || !json["shared_profiles"].is_array()) {
-            BOOST_LOG_TRIVIAL(error) << "get_bundle_presets: invalid response format";
+            BOOST_LOG_TRIVIAL(error) << "get_shared_bundle: invalid response format";
             return -1;
         }
 
@@ -2720,7 +2712,7 @@ int OrcaCloudServiceAgent::get_bundle_presets(const std::string& bundle_id, std:
             // Extract preset name and content
             std::string preset_name = preset_object.value("name", "");
             if (preset_name.empty()) {
-                BOOST_LOG_TRIVIAL(warning) << "get_bundle_presets: preset has no name, skipping";
+                BOOST_LOG_TRIVIAL(warning) << "get_shared_bundle: preset has no name, skipping";
                 continue;
             }
 
@@ -2752,47 +2744,54 @@ int OrcaCloudServiceAgent::get_bundle_presets(const std::string& bundle_id, std:
             (*presets)[preset_name] = value_map;
         }
 
-        BOOST_LOG_TRIVIAL(info) << "get_bundle_presets: loaded " << presets->size()
+        BOOST_LOG_TRIVIAL(info) << "get_shared_bundle: loaded " << presets->size()
                                 << " presets for bundle_id=" << bundle_id;
         return 0;
 
     } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << "get_bundle_presets: JSON parse error: " << e.what();
+        BOOST_LOG_TRIVIAL(error) << "get_shared_bundle: JSON parse error: " << e.what();
         return -1;
     }
 }
 
-int OrcaCloudServiceAgent::get_all_subscribed_bundles_presets(std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>* bundle_presets)
+int OrcaCloudServiceAgent::get_all_subscribed_bundles_presets(
+    std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>* bundle_presets,
+    std::map<std::string, BundleMetadata>* bundle_metadata)
 {
-    if (!bundle_presets) return -1;
+    if (!bundle_presets || !bundle_metadata) return -1;
 
     BOOST_LOG_TRIVIAL(info) << "get_all_subscribed_bundles_presets: fetching all subscribed bundles";
 
     // First, get the list of all subscribed bundles
-    std::vector<BundleMetadata> bundles;
-    int result = get_subscribed_bundles(&bundles);
+    std::vector<BundleMetadata> version_only_bundle;
+    int result = get_subscribed_bundles(&version_only_bundle);
     if (result != 0) {
         BOOST_LOG_TRIVIAL(error) << "get_all_subscribed_bundles_presets: failed to get subscribed bundles, result=" << result;
         return result;
     }
 
-    BOOST_LOG_TRIVIAL(info) << "get_all_subscribed_bundles_presets: found " << bundles.size() << " subscribed bundles";
+    BOOST_LOG_TRIVIAL(info) << "get_all_subscribed_bundles_presets: found " << version_only_bundle.size() << " subscribed bundles";
 
     // For each bundle, fetch its presets
-    for (const auto& bundle : bundles) {
-        BOOST_LOG_TRIVIAL(info) << "get_all_subscribed_bundles_presets: fetching presets for bundle_id=" << bundle.id;
+    for (const auto& version_only_bundle : version_only_bundle) {
+        BOOST_LOG_TRIVIAL(info) << "get_all_subscribed_bundles_presets: fetching presets for bundle_id=" << version_only_bundle.id;
 
+        BundleMetadata bundle;
         std::map<std::string, std::map<std::string, std::string>> presets;
-        int preset_result = get_bundle_presets(bundle.id, &presets);
+        int preset_result = get_shared_bundle(version_only_bundle.id, &presets, &bundle);
 
         if (preset_result != 0) {
-            BOOST_LOG_TRIVIAL(warning) << "get_all_subscribed_bundles_presets: failed to get presets for bundle_id=" << bundle.id << ", result=" << preset_result;
+            BOOST_LOG_TRIVIAL(warning) << "get_all_subscribed_bundles_presets: failed to get presets for bundle_id=" << version_only_bundle.id << ", result=" << preset_result;
             // Continue with other bundles even if one fails
             continue;
         }
 
         // Store the presets in the nested map: bundle_presets[bundle_id][preset_name][key] = value
         (*bundle_presets)[bundle.id] = presets;
+
+        // Store the bundle metadata (mandatory parameter)
+        (*bundle_metadata)[bundle.id] = bundle;
+
         BOOST_LOG_TRIVIAL(info) << "get_all_subscribed_bundles_presets: loaded " << presets.size() << " presets for bundle_id=" << bundle.id;
     }
 

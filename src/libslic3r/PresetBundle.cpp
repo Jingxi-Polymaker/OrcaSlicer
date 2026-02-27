@@ -1,4 +1,5 @@
 #include <cassert>
+#include <ctime>
 
 #include "PresetBundle.hpp"
 #include "PrintConfig.hpp"
@@ -893,6 +894,40 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
         });
     }
 
+    // NEW: Load bundle metadata from _subscribed directory
+    fs::path subscribed_dir(folder / PRESET_SUBSCRIBED_DIR);
+    if (fs::exists(subscribed_dir)) {
+        for (auto& entry : fs::directory_iterator(subscribed_dir)) {
+            if (!fs::is_directory(entry.path())) continue;
+
+            std::string bundle_dir = entry.path().string();
+            fs::path metadata_file = entry.path() / PRESET_BUNDLE_METADATA;
+            if (!fs::exists(metadata_file)) continue;
+
+            BundleMetadata metadata;
+            if (!metadata.load_from_json(metadata_file.string())) continue;
+
+            // Load presets from bundle (same logic as __local__)
+            this->prints.load_presets(bundle_dir, PRESET_PRINT_NAME, substitutions, substitution_rule, [&](Preset& preset) {
+                preset.bundle_id = metadata.id;
+                preset.is_from_bundle = true;
+                metadata.print_presets.push_back(preset.name);
+            });
+            this->filaments.load_presets(bundle_dir, PRESET_FILAMENT_NAME, substitutions, substitution_rule, [&](Preset& preset) {
+                preset.bundle_id = metadata.id;
+                preset.is_from_bundle = true;
+                metadata.filament_presets.push_back(preset.name);
+            });
+            this->printers.load_presets(bundle_dir, PRESET_PRINTER_NAME, substitutions, substitution_rule, [&](Preset& preset) {
+                preset.bundle_id = metadata.id;
+                preset.is_from_bundle = true;
+                metadata.printer_presets.push_back(preset.name);
+            });
+
+            m_bundles[metadata.id] = metadata;
+        }
+    }
+
     // BBS do not load sla_print
     // BBS: change directoties by design
     try {
@@ -1291,9 +1326,11 @@ void PresetBundle::save_user_presets(AppConfig& config, std::map<std::string, st
 }
 
 //Orca: Import subscribed bundle presets (load and save to disk in one operation)
-PresetsConfigSubstitutions PresetBundle::import_subscribed_presets(AppConfig& config,
-                                                                   std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>& bundle_presets,
-                                                                   ForwardCompatibilitySubstitutionRule substitution_rule)
+PresetsConfigSubstitutions PresetBundle::import_subscribed_presets(
+    AppConfig& config,
+    std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>& bundle_presets,
+    const std::map<std::string, BundleMetadata>& bundle_metadata,
+    ForwardCompatibilitySubstitutionRule substitution_rule)
 {
     PresetsConfigSubstitutions substitutions;
     std::string errors_cumulative;
@@ -1393,6 +1430,31 @@ PresetsConfigSubstitutions PresetBundle::import_subscribed_presets(AppConfig& co
                 errors_cumulative += err.what();
                 BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " error importing preset " << preset_name << ": " << err.what();
             }
+        }
+
+        // NEW: Save bundle metadata for this bundle
+        BundleMetadata metadata;
+        auto metadata_iter = bundle_metadata.find(bundle_id);
+        if (metadata_iter != bundle_metadata.end()) {
+            metadata = metadata_iter->second;
+        } else {
+            // Fallback: create minimal metadata with just the ID
+            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << " bundle_id " << bundle_id << " not found in bundle_metadata, creating minimal metadata";
+            metadata.id = bundle_id;
+        }
+
+        // Set imported_time to current time
+        metadata.imported_time = std::time(nullptr);
+
+        // Save metadata to bundle_metadata.json
+        boost::filesystem::path metadata_save_path = bundle_dir / PRESET_BUNDLE_METADATA;
+        if (metadata.save_to_json(metadata_save_path.string())) {
+            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " saved bundle metadata to: " << metadata_save_path.string();
+
+            // Store in m_bundles for tracking
+            m_bundles[metadata.id] = metadata;
+        } else {
+            BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to save bundle metadata to: " << metadata_save_path.string();
         }
     }
 
