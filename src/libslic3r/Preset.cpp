@@ -638,9 +638,13 @@ void Preset::save(DynamicPrintConfig* parent_config)
     }
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " save config for: " << this->name << " and filament_id: " << filament_id << " and base_id: " << this->base_id;
 
-    fs::path idx_file(this->file);
-    idx_file.replace_extension(".info");
-    this->save_info(idx_file.string());
+    // Only save .info file for user presets (not for bundle presets)
+    // Bundle presets are synced via bundle_id and don't need individual .info files
+    if (!is_from_bundle) {
+        fs::path idx_file(this->file);
+        idx_file.replace_extension(".info");
+        this->save_info(idx_file.string());
+    }
 }
 
 void Preset::reload(Preset const &parent)
