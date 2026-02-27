@@ -1244,38 +1244,12 @@ bool PresetBundle::import_json_presets(PresetsConfigSubstitutions &            s
 
         // If bundle_dir is provided, use it for the save operation
         if (!bundle_dir.empty()) {
-            // Use the passed bundle directory directly
-            fs::path original_dir_path(collection->m_dir_path);
-            fs::path bundle_base_dir(bundle_dir);
-
-            // Create bundle directory if it doesn't exist
-            boost::system::error_code ec;
-            if (!fs::exists(bundle_base_dir))
-                fs::create_directories(bundle_base_dir, ec);
-            if (ec)
-                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to create bundle directory: " << bundle_base_dir.string() << " error: " << ec.message();
-
-            // Set collection's directory to the type-specific bundle subdirectory
-            fs::path type_dir(bundle_base_dir / type_subdir);
-            if (!fs::exists(type_dir))
-                fs::create_directory(type_dir, ec);
-            if (ec)
-                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to create type directory: " << type_dir.string() << " error: " << ec.message();
-
             // Extract bundle_id from the bundle directory path for the preset attribute
-            std::string bundle_id = bundle_base_dir.filename().string();
-
-            // Set bundle attributes on the preset
-            preset.bundle_id = bundle_id;
-            preset.is_from_bundle = true;
-
-            // Temporarily set the bundle directory for the save operation
-            collection->m_dir_path = type_dir.string();
-            preset.file = collection->path_from_name(name, inherit_preset == nullptr);
-            preset.save(inherit_preset ? &inherit_preset->config : nullptr);
-
-            // Restore original directory path
-            collection->m_dir_path = original_dir_path.string();
+            std::string bundle_id = boost::filesystem::path(bundle_dir).filename().string();
+            if (!save_preset_to_bundle_dir(preset, collection, bundle_id, type_subdir, bundle_dir)) {
+                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to save preset " << preset.name << " to bundle directory";
+                return false;
+            }
         } else {
             preset.save(inherit_preset ? &inherit_preset->config : nullptr);
         }
@@ -1407,53 +1381,11 @@ PresetsConfigSubstitutions PresetBundle::import_subscribed_presets(AppConfig& co
                     // Find the preset that was just loaded
                     Preset* preset = preset_collection->find_preset(preset_name, false, true);
                     if (preset) {
-                        // Set bundle attributes on the preset
-                        preset->bundle_id = bundle_id;
-                        preset->is_from_bundle = true;
-
-                        // Store original directory path
-                        std::string original_dir_path = preset_collection->m_dir_path;
-
-                        // Create bundle type directory
-                        boost::filesystem::path type_dir = bundle_dir / type_subdir;
-                        if (!fs::exists(type_dir)) {
-                            fs::create_directories(type_dir, ec);
-                            if (ec) {
-                                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to create type directory: "
-                                                        << type_dir.string() << " error: " << ec.message();
-                                preset_collection->m_dir_path = original_dir_path;
-                                continue;
-                            }
+                        // Use helper function to save preset to bundle directory
+                        if (!save_preset_to_bundle_dir(*preset, preset_collection, bundle_id, type_subdir, bundle_dir.string())) {
+                            BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to save preset " << preset_name << " to bundle directory";
+                            continue;
                         }
-
-                        // Temporarily set directory path for save operation
-                        preset_collection->m_dir_path = type_dir.string();
-                        preset->file = preset_collection->path_for_preset(*preset);
-
-                        // Save with parent config if inherits from another preset
-                        std::string inherits = Preset::inherits(preset->config);
-                        if (inherits.empty()) {
-                            // Root preset - save full config
-                            preset->save(nullptr);
-                        } else {
-                            Preset* parent_preset = preset_collection->find_preset2(inherits, true);
-                            if (!parent_preset) {
-                                ++m_errors;
-                                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " cannot find parent preset for " << preset->name
-                                                        << ", inherits " << inherits;
-                            } else {
-                                if (preset->base_id.empty())
-                                    preset->base_id = parent_preset->setting_id;
-                                BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " saved preset " << preset->name
-                                                        << " filament_id: " << preset->filament_id
-                                                        << " base_id: " << preset->base_id
-                                                        << " bundle: " << bundle_id;
-                                preset->save(&(parent_preset->config));
-                            }
-                        }
-
-                        // Restore original directory path
-                        preset_collection->m_dir_path = original_dir_path;
                     }
                 }
             }
@@ -1474,6 +1406,80 @@ PresetsConfigSubstitutions PresetBundle::import_subscribed_presets(AppConfig& co
 
     BOOST_LOG_TRIVIAL(debug) << __FUNCTION__ << " finished, process_added " << process_added << ", filament_added " << filament_added << ", machine_added " << machine_added;
     return substitutions;
+}
+
+// Helper function: save preset to bundle directory with common logic
+// This function extracts the common code used by both import_json_presets and import_subscribed_presets
+bool PresetBundle::save_preset_to_bundle_dir(Preset& preset, PresetCollection* collection,
+                                              const std::string& bundle_id, const std::string& type_subdir,
+                                              const std::string& bundle_base_dir)
+{
+    if (bundle_base_dir.empty()) {
+        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << " bundle_base_dir is empty, cannot save preset " << preset.name;
+        return false;
+    }
+
+    // Store original directory path
+    std::string original_dir_path = collection->m_dir_path;
+
+    try {
+        // Create bundle directory if it doesn't exist
+        boost::filesystem::path bundle_dir(bundle_base_dir);
+        boost::system::error_code ec;
+        if (!boost::filesystem::exists(bundle_dir))
+            boost::filesystem::create_directories(bundle_dir, ec);
+        if (ec) {
+            BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to create bundle directory: " << bundle_dir.string() << " error: " << ec.message();
+            return false;
+        }
+
+        // Create bundle type directory
+        boost::filesystem::path type_dir = bundle_dir / type_subdir;
+        if (!boost::filesystem::exists(type_dir)) {
+            boost::filesystem::create_directories(type_dir, ec);
+            if (ec) {
+                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to create type directory: " << type_dir.string() << " error: " << ec.message();
+                return false;
+            }
+        }
+
+        // Set bundle attributes on the preset
+        preset.bundle_id = bundle_id;
+        preset.is_from_bundle = true;
+
+        // Temporarily set directory path for save operation
+        collection->m_dir_path = type_dir.string();
+        preset.file = collection->path_for_preset(preset);
+
+        // Save with parent config if inherits from another preset
+        std::string inherits = Preset::inherits(preset.config);
+        if (inherits.empty()) {
+            // Root preset - save full config
+            preset.save(nullptr);
+        } else {
+            Preset* parent_preset = collection->find_preset2(inherits, true);
+            if (!parent_preset) {
+                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " cannot find parent preset for " << preset.name << ", inherits " << inherits;
+            } else {
+                if (preset.base_id.empty())
+                    preset.base_id = parent_preset->setting_id;
+                BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " saved preset " << preset.name
+                                        << " filament_id: " << preset.filament_id
+                                        << " base_id: " << preset.base_id
+                                        << " bundle: " << bundle_id;
+                preset.save(&(parent_preset->config));
+            }
+        }
+
+        // Restore original directory path
+        collection->m_dir_path = original_dir_path;
+        return true;
+
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " exception saving preset " << preset.name << ": " << e.what();
+        collection->m_dir_path = original_dir_path;
+        return false;
+    }
 }
 
 //BBS: save user preset to user_id preset folder
