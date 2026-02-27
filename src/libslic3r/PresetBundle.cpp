@@ -1328,7 +1328,7 @@ void PresetBundle::save_user_presets(AppConfig& config, std::map<std::string, st
 //Orca: Import subscribed bundle presets (load and save to disk in one operation)
 PresetsConfigSubstitutions PresetBundle::import_subscribed_presets(
     AppConfig& config,
-    std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>& bundle_presets,
+    const std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>& bundle_presets,
     const std::map<std::string, BundleMetadata>& bundle_metadata,
     ForwardCompatibilitySubstitutionRule substitution_rule)
 {

@@ -137,7 +137,7 @@ public:
     // Orca: Import subscribed bundle presets (load and save to disk in one operation)
     PresetsConfigSubstitutions import_subscribed_presets(
         AppConfig& config,
-        std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>& bundle_presets,
+        const std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>& bundle_presets,
         const std::map<std::string, BundleMetadata>& bundle_metadata,
         ForwardCompatibilitySubstitutionRule rule);
     PresetsConfigSubstitutions import_presets(std::vector<std::string> &files, std::function<int(std::string const &)> override_confirm, ForwardCompatibilitySubstitutionRule rule, AppConfig& config);
