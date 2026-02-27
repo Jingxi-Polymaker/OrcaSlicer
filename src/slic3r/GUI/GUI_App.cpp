@@ -5965,7 +5965,7 @@ void GUI_App::sync_bundle(const std::string& bundle_id, const BundleMetadata& lo
     bundle_presets_3level[bundle_id] = bundle_presets_2level;
 
     // Import the updated bundle on the main thread
-    CallAfter([this, bundle_id, bundle_presets_3level, remote_metadata]() mutable {
+    CallAfter([this, bundle_id, bundle_presets_3level, remote_metadata]() {
         if (!is_closing() && preset_bundle && app_config) {
             preset_bundle->import_subscribed_presets(*app_config, bundle_presets_3level, {{bundle_id, remote_metadata}}, ForwardCompatibilitySubstitutionRule::Enable);
             if (mainframe)
