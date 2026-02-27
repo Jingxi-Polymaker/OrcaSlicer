@@ -5761,10 +5761,11 @@ void GUI_App::reload_settings()
         if (m_agent->get_provider() == CloudAgentProvider::Orca) {
             auto orca_agent = std::dynamic_pointer_cast<OrcaCloudServiceAgent>(m_agent->get_cloud_agent());
             std::map<std::string, std::map<std::string, std::map<std::string, std::string>>> subscribed_bundle_presets;
-            int subscribed_result = orca_agent->get_all_subscribed_bundles_presets(&subscribed_bundle_presets);
+            std::map<std::string, BundleMetadata> subscribed_bundle_metadata;
+            int subscribed_result = orca_agent->get_all_subscribed_bundles_presets(&subscribed_bundle_presets, &subscribed_bundle_metadata);
             if (subscribed_result == 0) {
                 BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << " subscribed bundle preset number is: " << subscribed_bundle_presets.size();
-                preset_bundle->import_subscribed_presets(*app_config, subscribed_bundle_presets, ForwardCompatibilitySubstitutionRule::Enable);
+                preset_bundle->import_subscribed_presets(*app_config, subscribed_bundle_presets, subscribed_bundle_metadata, ForwardCompatibilitySubstitutionRule::Enable);
             } else {
                 BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << __LINE__ << " failed to import subscribed bundles, result: " << subscribed_result;
             }
