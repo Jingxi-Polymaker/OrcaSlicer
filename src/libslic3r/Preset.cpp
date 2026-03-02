@@ -522,7 +522,7 @@ void Preset::load_info(const std::string& file)
 void Preset::save_info(std::string file)
 {
     //BBS: add project embedded preset logic
-    if (this->is_project_embedded)
+    if (this->is_project_embedded || this->is_from_bundle)
         return;
     if (file.empty()) {
         fs::path idx_file(this->file);
