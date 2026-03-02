@@ -135,7 +135,7 @@ public:
     PresetsConfigSubstitutions load_user_presets(std::string user, ForwardCompatibilitySubstitutionRule rule);
     PresetsConfigSubstitutions load_user_presets(AppConfig &config, std::map<std::string, std::map<std::string, std::string>>& my_presets, ForwardCompatibilitySubstitutionRule rule);
     // Orca: Import subscribed bundle presets (load and save to disk in one operation)
-    PresetsConfigSubstitutions import_subscribed_presets(
+    PresetsConfigSubstitutions update_subscribed_presets(
         AppConfig& config,
         const std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>& bundle_presets,
         const std::map<std::string, BundleMetadata>& bundle_metadata,

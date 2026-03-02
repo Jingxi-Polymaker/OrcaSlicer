@@ -1326,7 +1326,7 @@ void PresetBundle::save_user_presets(AppConfig& config, std::map<std::string, st
 }
 
 //Orca: Import subscribed bundle presets (load and save to disk in one operation)
-PresetsConfigSubstitutions PresetBundle::import_subscribed_presets(
+PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
     AppConfig& config,
     const std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>& bundle_presets,
     const std::map<std::string, BundleMetadata>& bundle_metadata,
@@ -1337,6 +1337,60 @@ PresetsConfigSubstitutions PresetBundle::import_subscribed_presets(
     bool process_added = false, filament_added = false, machine_added = false;
 
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " enter, substitution_rule " << substitution_rule << ", bundle count " << bundle_presets.size();
+
+    // Helper lambda to find and delete a preset from any collection
+    auto delete_preset_from_collection = [this](const std::string& preset_name) -> bool {
+        PresetCollection* collections[] = {&this->prints, &this->filaments, &this->printers};
+        for (auto* coll : collections) {
+            if (Preset* preset = coll->find_preset(preset_name, false, true)) {
+                coll->delete_preset(preset_name);
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // Helper lambda to check and delete obsolete presets for a specific type
+    auto remove_obsolete_presets = [&delete_preset_from_collection](const std::vector<std::string>& preset_list,
+                                                                     const std::map<std::string, std::map<std::string, std::string>>& presets,
+                                                                     const char* type_name) -> int {
+        int removed_count = 0;
+        for (const auto& preset_name : preset_list) {
+            if (presets.find(preset_name) == presets.end()) {
+                if (delete_preset_from_collection(preset_name)) {
+                    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": " << type_name << " preset '" << preset_name << "' no longer in remote bundle, deleted";
+                    removed_count++;
+                } else {
+                    BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": " << type_name << " preset '" << preset_name << "' not found in collections";
+                }
+            }
+        }
+        return removed_count;
+    };
+
+    // Process each bundle to remove obsolete presets (before importing new ones)
+    for (const auto& bundle_entry : bundle_presets) {
+        const std::string& bundle_id = bundle_entry.first;
+        const auto& presets = bundle_entry.second;
+
+        // Check if this bundle exists locally
+        auto local_bundle_iter = m_bundles.find(bundle_id);
+        if (local_bundle_iter == m_bundles.end()) {
+            continue; // New bundle, nothing to remove
+        }
+
+        const BundleMetadata& local_metadata = local_bundle_iter->second;
+        int total_removed = 0;
+
+        // Remove obsolete presets from each type
+        total_removed += remove_obsolete_presets(local_metadata.print_presets, presets, "print");
+        total_removed += remove_obsolete_presets(local_metadata.filament_presets, presets, "filament");
+        total_removed += remove_obsolete_presets(local_metadata.printer_presets, presets, "printer");
+
+        if (total_removed > 0) {
+            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": deleted " << total_removed << " obsolete presets from bundle " << bundle_id;
+        }
+    }
 
     // Get current user ID for path construction
     std::string user_id = config.get("preset_folder");
@@ -1445,6 +1499,30 @@ PresetsConfigSubstitutions PresetBundle::import_subscribed_presets(
 
         // Set imported_time to current time
         metadata.imported_time = std::time(nullptr);
+
+        // Clear and repopulate the preset vectors with current bundle presets
+        metadata.print_presets.clear();
+        metadata.filament_presets.clear();
+        metadata.printer_presets.clear();
+
+        // Use array-based lookup to avoid repetitive if-else chains
+        static const char* preset_types[] = {PRESET_IOT_PRINT_TYPE, PRESET_IOT_FILAMENT_TYPE, PRESET_IOT_PRINTER_TYPE};
+        std::vector<std::string>* preset_vectors[] = {&metadata.print_presets, &metadata.filament_presets, &metadata.printer_presets};
+
+        for (const auto& preset_entry : presets) {
+            const std::string& preset_name = preset_entry.first;
+            auto type_iter = preset_entry.second.find(BBL_JSON_KEY_TYPE);
+            if (type_iter == preset_entry.second.end())
+                continue;
+
+            // Find matching type and add to corresponding vector
+            for (size_t i = 0; i < 3; i++) {
+                if (type_iter->second == preset_types[i]) {
+                    preset_vectors[i]->push_back(preset_name);
+                    break;
+                }
+            }
+        }
 
         // Save metadata to bundle_metadata.json
         boost::filesystem::path metadata_save_path = bundle_dir / PRESET_BUNDLE_METADATA;
