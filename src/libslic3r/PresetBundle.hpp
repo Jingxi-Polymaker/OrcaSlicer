@@ -134,6 +134,12 @@ public:
     // BBS Load user presets
     PresetsConfigSubstitutions load_user_presets(std::string user, ForwardCompatibilitySubstitutionRule rule);
     PresetsConfigSubstitutions load_user_presets(AppConfig &config, std::map<std::string, std::map<std::string, std::string>>& my_presets, ForwardCompatibilitySubstitutionRule rule);
+    // Orca: Import subscribed bundle presets (load and save to disk in one operation)
+    PresetsConfigSubstitutions update_subscribed_presets(
+        AppConfig& config,
+        const std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>& bundle_presets,
+        const std::map<std::string, BundleMetadata>& bundle_metadata,
+        ForwardCompatibilitySubstitutionRule rule);
     PresetsConfigSubstitutions import_presets(std::vector<std::string> &files, std::function<int(std::string const &)> override_confirm, ForwardCompatibilitySubstitutionRule rule, AppConfig& config);
     bool                       import_json_presets(PresetsConfigSubstitutions &            substitutions,
                                                    std::string &                           file,
@@ -410,8 +416,13 @@ private:
 
     // Orca: used for validation only
     bool validation_mode = false;
-    std::string vendor_to_validate = ""; 
+    std::string vendor_to_validate = "";
     int m_errors = 0;
+
+    // Helper function: save preset to bundle directory with common logic
+    bool save_preset_to_bundle_dir(Preset& preset, PresetCollection* collection,
+                                   const std::string& bundle_id, const std::string& type_subdir,
+                                   const std::string& bundle_base_dir);
 
 };
 

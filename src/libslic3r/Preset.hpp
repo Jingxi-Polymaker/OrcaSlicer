@@ -31,6 +31,7 @@
 
 // Orca: bundle import directories
 #define PRESET_LOCAL_DIR          "_local"
+#define PRESET_SUBSCRIBED_DIR     "_subscribed"
 #define PRESET_INDIVIDUAL_DIR     "individual"
 #define PRESET_BUNDLE_METADATA    "bundle_metadata.json"
 
@@ -233,7 +234,7 @@ public:
     //BBS: add type for project-embedded
     bool                is_project_embedded = false;
     ConfigSubstitutions *loading_substitutions{nullptr};
-    bool                is_user() const { return ! this->is_default && ! this->is_system && ! this->is_project_embedded; }
+    bool                is_user() const { return ! this->is_default && ! this->is_system && ! this->is_project_embedded && ! this->is_from_bundle; }
     //bool                is_user() const { return ! this->is_default && ! this->is_system; }
 
     // Name of the preset, usually derived form the file name.
