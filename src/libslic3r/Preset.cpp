@@ -3416,9 +3416,13 @@ void PresetCollection::update_map_system_profile_renamed()
 
 void PresetCollection::set_custom_preset_alias(Preset &preset)
 {
+    // For filaments, remove the postfix
+    // For printers, there is nothing to remove
+    // For prints AKA processes, the postfix should be kept
+    // Alias should be set here, as the preset name may be augmented further later (i.e., prefixing relative path for bundles)
+    std::string alias_name;
+    std::string preset_name = preset.name;
     if (m_type == Preset::Type::TYPE_FILAMENT && preset.config.has(BBL_JSON_KEY_INHERITS) && preset.config.option<ConfigOptionString>(BBL_JSON_KEY_INHERITS)->value.empty()) {
-        std::string alias_name;
-        std::string preset_name = preset.name;
         if (alias_name.empty()) {
             size_t end_pos = preset_name.find_first_of("@");
             if (end_pos != std::string::npos) {
@@ -3426,14 +3430,14 @@ void PresetCollection::set_custom_preset_alias(Preset &preset)
                 boost::trim_right(alias_name);
             }
         }
-        if (alias_name.empty() || is_alias_exist(alias_name, &preset))
-            preset.alias = "";
-        else {
-            preset.alias = std::move(alias_name);
-            m_map_alias_to_profile_name[preset.alias].push_back(preset.name);
-            set_printer_hold_alias(preset.alias, preset);
-        }
     }
+    else {
+        alias_name = preset_name;
+    }
+
+    preset.alias = std::move(alias_name);
+    m_map_alias_to_profile_name[preset.alias].push_back(preset.name);
+    set_printer_hold_alias(preset.alias, preset);
 }
 
 void PresetCollection::set_printer_hold_alias(const std::string &alias, Preset &preset, bool remove)
