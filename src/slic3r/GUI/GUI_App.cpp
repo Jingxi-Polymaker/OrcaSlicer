@@ -977,7 +977,6 @@ void GUI_App::post_init()
         // scrn->SetText(_L("Loading user presets..."));
         if (m_agent) {
             start_sync_user_preset();
-            start_sync_subscribed_bundles();
         }
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " sync_user_preset: true";
     } else {
@@ -1641,7 +1640,6 @@ void GUI_App::restart_networking()
 
         if (app_config->get("sync_user_preset") == "true") {
             start_sync_user_preset();
-            start_sync_subscribed_bundles();
         }
         // if (mainframe && this->app_config->get("staff_pick_switch") == "true") {
         //     if (mainframe->m_webview) { mainframe->m_webview->SendDesignStaffpick(has_model_mall()); }
@@ -2583,7 +2581,6 @@ bool GUI_App::OnInit()
 int GUI_App::OnExit()
 {
     stop_sync_user_preset();
-    stop_sync_subscribed_bundles();
 
     if (m_device_manager) {
         delete m_device_manager;
@@ -4509,7 +4506,6 @@ void GUI_App::request_user_logout()
         mainframe->update_side_preset_ui();
 
         GUI::wxGetApp().stop_sync_user_preset();
-        GUI::wxGetApp().stop_sync_subscribed_bundles();
     }
 }
 
@@ -5968,12 +5964,88 @@ void GUI_App::sync_bundle(const std::string& bundle_id, const BundleMetadata& lo
     CallAfter([this, bundle_id, bundle_presets_3level, remote_metadata]() {
         if (!is_closing() && preset_bundle && app_config) {
             preset_bundle->update_subscribed_presets(*app_config, bundle_presets_3level, {{bundle_id, remote_metadata}}, ForwardCompatibilitySubstitutionRule::Enable);
+            // Clear the update_available flag after successful update
+            auto it = preset_bundle->m_bundles.find(bundle_id);
+            if (it != preset_bundle->m_bundles.end()) {
+                it->second.update_available = false;
+            }
             if (mainframe)
                 mainframe->update_side_preset_ui();
-
             BOOST_LOG_TRIVIAL(info) << "sync_bundle: successfully updated bundle " << bundle_id;
         }
     });
+}
+
+void GUI_App::check_bundle_updates()
+{
+    if (!m_agent || !m_agent->is_user_login()) return;
+    if (m_agent->get_provider() != CloudAgentProvider::Orca) return;
+
+    auto orca_agent = std::dynamic_pointer_cast<OrcaCloudServiceAgent>(m_agent->get_cloud_agent());
+    if (!orca_agent) return;
+
+    BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: checking for bundle updates";
+
+    // Fetch all subscribed bundles from cloud
+    std::map<std::string, std::map<std::string, std::map<std::string, std::string>>> subscribed_bundle_presets;
+    std::map<std::string, BundleMetadata> subscribed_bundle_metadata;
+    int result = orca_agent->get_all_subscribed_bundles_presets(&subscribed_bundle_presets, &subscribed_bundle_metadata);
+
+    if (result != 0) {
+        BOOST_LOG_TRIVIAL(warning) << "check_bundle_updates: failed to fetch subscribed bundles, result=" << result;
+        return;
+    }
+
+    // Iterate through local bundles and check for updates
+    if (!preset_bundle) return;
+
+    int bundles_checked = 0;
+    int updates_available = 0;
+
+    for (auto& [bundle_id, local_metadata] : preset_bundle->m_bundles) {
+        BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: bundle " << bundle_id << " name: " << local_metadata.name;
+        // Only check subscribed bundles (those with UUID-style IDs from Orca Cloud)
+        // Skip external bundles (those with name+timestamp IDs)
+        if (!local_metadata.is_subscribed) {
+        BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: bundle not subbed";
+            continue;
+        }
+
+        // Find corresponding remote metadata
+        auto remote_it = subscribed_bundle_metadata.find(bundle_id);
+        if (remote_it == subscribed_bundle_metadata.end()) {
+            BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: bundle " << bundle_id << " not found in remote subscriptions";
+            continue;
+        }
+
+        const auto& remote_metadata = remote_it->second;
+
+        // Compare versions using Semver
+        auto local_version = Semver::parse(local_metadata.version);
+        auto remote_version = Semver::parse(remote_metadata.version);
+
+        if (!local_version || !remote_version) {
+            BOOST_LOG_TRIVIAL(warning) << "check_bundle_updates: failed to parse versions for bundle " << bundle_id
+                                       << " (local: " << local_metadata.version << ", remote: " << remote_metadata.version << ")";
+            continue;
+        }
+
+        bundles_checked++;
+
+        // Update the runtime-only flag if remote version is newer
+        if (remote_version > local_version) {
+            local_metadata.update_available = true;
+            updates_available++;
+            BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: bundle " << bundle_id << " (" << local_metadata.name
+                                    << ") has update available: local=" << local_metadata.version
+                                    << ", remote=" << remote_metadata.version;
+        } else {
+            local_metadata.update_available = false;
+        }
+    }
+
+    BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: checked " << bundles_checked
+                            << " bundles, found " << updates_available << " updates available";
 }
 
 void GUI_App::start_sync_user_preset(bool with_progress_dlg)
@@ -6122,134 +6194,6 @@ void GUI_App::stop_sync_user_preset()
             m_sync_update_thread.join();
         else
             m_sync_update_thread.detach();
-    }
-}
-
-void GUI_App::start_sync_subscribed_bundles(bool with_progress_dlg)
-{
-    if (app_config->get_stealth_mode())
-        return;
-
-    if (!m_agent || !m_agent->is_user_login()) return;
-    if (!m_agent->get_cloud_agent()) return;
-
-    // Only supported for Orca Cloud provider
-    if (m_agent->get_provider() != CloudAgentProvider::Orca) return;
-
-    // has already start sync
-    if (m_bundle_sync_token) return;
-
-    BOOST_LOG_TRIVIAL(info) << "start_sync_subscribed_bundles...";
-    m_bundle_sync_token.reset(new int(0));
-
-    ProgressFn progressFn;
-    WasCancelledFn cancelFn;
-    std::function<void(bool)> finishFn;
-
-    if (with_progress_dlg) {
-        auto dlg = new ProgressDialog(_L("Loading"), "", 100, this->mainframe, wxPD_AUTO_HIDE | wxPD_APP_MODAL | wxPD_CAN_ABORT);
-        dlg->Update(0, _L("Loading subscribed bundles"));
-        progressFn = [this, dlg](int percent) {
-            CallAfter([=]{
-                dlg->Update(percent, _L("Loading subscribed bundles"));
-            });
-        };
-        cancelFn = [this, dlg]() {
-            return is_closing() || dlg->WasCanceled();
-        };
-        finishFn = [this, dlg, t = std::weak_ptr<int>(m_bundle_sync_token)](bool ok) {
-            CallAfter([=]{
-                dlg->Destroy();
-                if (ok && m_agent && t.lock() == m_bundle_sync_token) reload_settings();
-            });
-        };
-    }
-    else {
-        finishFn = [this, t = std::weak_ptr<int>(m_bundle_sync_token)](bool ok) {
-            CallAfter([=] {
-                if (ok && m_agent && t.lock() == m_bundle_sync_token) reload_settings();
-            });
-        };
-        cancelFn = [this]() {
-            return is_closing();
-        };
-    }
-
-    // Initial sync fetch
-    m_bundle_sync_thread = Slic3r::create_thread(
-        [this, progressFn, cancelFn, finishFn, t = std::weak_ptr<int>(m_bundle_sync_token)] {
-            bool initial_fetch_ok = false;
-            if (m_agent && m_agent->is_user_login() && preset_bundle) {
-                auto orca_agent = std::dynamic_pointer_cast<OrcaCloudServiceAgent>(m_agent->get_cloud_agent());
-                if (orca_agent) {
-                    std::map<std::string, std::map<std::string, std::map<std::string, std::string>>> subscribed_bundle_presets;
-                    std::map<std::string, BundleMetadata> subscribed_bundle_metadata;
-                    int result = orca_agent->get_all_subscribed_bundles_presets(&subscribed_bundle_presets, &subscribed_bundle_metadata);
-                    if (result == 0) {
-                        BOOST_LOG_TRIVIAL(info) << "start_sync_subscribed_bundles: initial fetch found " << subscribed_bundle_presets.size() << " presets";
-                        initial_fetch_ok = true;
-
-                        // Report progress if dialog is shown
-                        if (progressFn) {
-                            progressFn(50);
-                        }
-                    } else {
-                        BOOST_LOG_TRIVIAL(warning) << "start_sync_subscribed_bundles: initial fetch failed with result " << result;
-                    }
-                }
-            }
-
-            // Call finishFn to trigger reload_settings()
-            if (finishFn) {
-                finishFn(initial_fetch_ok);
-            }
-
-            // Report completion progress
-            if (progressFn) {
-                progressFn(100);
-            }
-
-            // Enter continuous polling loop (similar pattern to user preset sync)
-            int count = 0;
-            while (!t.expired()) {
-                count++;
-                if (count % 20 == 0) {  // Sync every 2 seconds (20 * 100ms)
-                    if (m_agent && m_agent->is_user_login() && preset_bundle && app_config) {
-                        auto orca_agent = std::dynamic_pointer_cast<OrcaCloudServiceAgent>(m_agent->get_cloud_agent());
-                        if (orca_agent) {
-                            // Iterate over all loaded bundles
-                            for (const auto& bundle_entry : preset_bundle->m_bundles) {
-                                const std::string& bundle_id = bundle_entry.first;
-                                const BundleMetadata& local_metadata = bundle_entry.second;
-
-                                // Sync each bundle individually
-                                sync_bundle(bundle_id, local_metadata);
-
-                                // Small delay between bundle syncs to avoid overwhelming the server
-                                boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
-                            }
-                        }
-                    }
-                } else {
-                    // Sleep for 100ms between iterations
-                    boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
-                }
-            }
-            BOOST_LOG_TRIVIAL(info) << "start_sync_subscribed_bundles: thread exiting";
-        });
-}
-
-void GUI_App::stop_sync_subscribed_bundles()
-{
-    if (!m_bundle_sync_token)
-        return;
-
-    m_bundle_sync_token.reset();
-    if (m_bundle_sync_thread.joinable()) {
-        if (is_closing())
-            m_bundle_sync_thread.join();
-        else
-            m_bundle_sync_thread.detach();
     }
 }
 
