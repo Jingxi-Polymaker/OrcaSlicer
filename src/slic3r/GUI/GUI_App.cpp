@@ -6003,11 +6003,9 @@ void GUI_App::check_bundle_updates()
     int updates_available = 0;
 
     for (auto& [bundle_id, local_metadata] : preset_bundle->m_bundles) {
-        BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: bundle " << bundle_id << " name: " << local_metadata.name;
         // Only check subscribed bundles (those with UUID-style IDs from Orca Cloud)
         // Skip external bundles (those with name+timestamp IDs)
         if (!local_metadata.is_subscribed) {
-        BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: bundle not subbed";
             continue;
         }
 
