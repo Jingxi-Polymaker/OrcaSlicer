@@ -1142,7 +1142,7 @@ void PlaterPresetComboBox::update()
     std::map<wxString, wxString>   preset_descriptions;
     std::map<wxString, std::string> preset_filament_vendors;
     std::map<wxString, std::string> preset_filament_types;
-    std::map<wxString, std::string> preset_filament_names; // ORCA
+    std::map<wxString, std::string> preset_aliases; // ORCA
     std::map<wxString, std::string> preset_bundle_names;
     //BBS:  move system to the end
     wxString selected_system_preset;
@@ -1175,7 +1175,8 @@ void PlaterPresetComboBox::update()
         }
 
         bool single_bar = false;
-        wxString name = get_preset_name(preset);
+        wxString name = preset.name;
+        preset_aliases[name] = get_preset_name(preset).ToStdString(); // ORCA
 
         // Track bundle names for bundled presets
         if (preset.is_from_bundle && !preset.bundle_id.empty()) {
@@ -1206,7 +1207,6 @@ void PlaterPresetComboBox::update()
                 if (preset_filament_vendors[name] == "Bambu Lab")
                     preset_filament_vendors[name] = "Bambu";
                 preset_filament_types[name] = preset.config.option<ConfigOptionStrings>("filament_type")->values.at(0);
-                preset_filament_names[name] = name.ToStdString(); // ORCA
             //}
         }
         wxBitmap* bmp = get_bmp(preset);
@@ -1225,6 +1225,7 @@ void PlaterPresetComboBox::update()
                 auto printer_model = preset.config.opt_string("printer_model");
                 name = from_u8(printer_model);
                 if (system_printer_models.count(printer_model) == 0) {
+                    preset_aliases[name] = name.ToStdString(); // ORCA
                     system_presets.emplace(name, bmp);
                     system_printer_models.insert(printer_model);
                 }
@@ -1284,7 +1285,7 @@ void PlaterPresetComboBox::update()
                                                 "Bambu PLA Galaxy", "Bambu PLA Metal", "Bambu PLA Marble", "Bambu PETG-CF", "Bambu PETG Translucent", "Bambu ABS-GF"};
     std::vector<std::string> first_vendors     = {"", "Bambu", "Generic"}; // Empty vendor for non-system presets
     std::vector<std::string> first_types     = {"PLA", "PETG", "ABS", "TPU"};
-    auto  add_presets       = [this, &preset_descriptions, &filament_orders, &preset_filament_vendors, &first_vendors, &preset_filament_types, &preset_filament_names, &preset_bundle_names, &first_types, &selected_in_ams]
+    auto  add_presets       = [this, &preset_descriptions, &filament_orders, &preset_filament_vendors, &first_vendors, &preset_filament_types, &preset_aliases, &preset_bundle_names, &first_types, &selected_in_ams]
             (std::map<wxString, wxBitmap *> const &presets, wxString const &selected, std::string const &group, wxString const &groupName) {
         if (!presets.empty()) {
             set_label_marker(Append(_L(group), wxNullBitmap, DD_ITEM_STYLE_SPLIT_ITEM));
@@ -1323,7 +1324,7 @@ void PlaterPresetComboBox::update()
                     auto by = groupName == "by_bundle" ? preset_bundle_names
                             : groupName == "by_vendor" ? preset_filament_vendors
                             : groupName == "by_type"   ? preset_filament_types
-                            : preset_filament_names;
+                            : preset_aliases;
                     std::sort(list.begin(), list.end(), [&by](auto *l, auto *r) {
                         auto get_key = [&](auto* item) -> std::pair<bool, std::string> {
                             std::string str = by.count(item->first) ? by.at(item->first) : "";
@@ -1345,7 +1346,7 @@ void PlaterPresetComboBox::update()
                                     : groupName == "by_vendor"   ? (preset_filament_vendors[it->first].empty() ? _L("Unspecified") : preset_filament_vendors[it->first])
                                     : groupByGroup               ? groupName
                                     : preset_filament_vendors[it->first];
-                    int  index = Append(it->first, *it->second, groupName2, nullptr, unsupported ? DD_ITEM_STYLE_DISABLED : 0);
+                    int  index = Append(preset_aliases[it->first], *it->second, groupName2, nullptr, unsupported ? DD_ITEM_STYLE_DISABLED : 0);
                     if (unsupported)
                         set_label_marker(index, LABEL_ITEM_DISABLED);
                     SetItemTooltip(index, preset_descriptions[it->first]);
@@ -1357,7 +1358,7 @@ void PlaterPresetComboBox::update()
                 }
             } else {
                 for (std::map<wxString, wxBitmap *>::const_iterator it = presets.begin(); it != presets.end(); ++it) {
-                    SetItemTooltip(Append(it->first, *it->second), preset_descriptions[it->first]);
+                    SetItemTooltip(Append(preset_aliases[it->first], *it->second), preset_descriptions[it->first]);
                     if (group == "System presets")
                         set_label_marker(GetCount() - 1, LABEL_ITEM_PRINTER_MODELS);
                     validate_selection(it->first == selected);
@@ -1595,7 +1596,10 @@ void TabPresetComboBox::OnSelect(wxCommandEvent &evt)
 
 wxString TabPresetComboBox::get_preset_name(const Preset& preset)
 {
-    return from_u8(preset.label(true));
+    if (preset.is_from_bundle)
+        return from_u8(preset.label(false));
+    else
+        return from_u8(preset.label(true));
 }
 
 // Update the choice UI from the list of presets.
@@ -1616,8 +1620,9 @@ void TabPresetComboBox::update()
     std::map<wxString, std::pair<wxBitmap*, bool>>  system_presets;
     // ORCA: add bundle presets
     std::map<wxString, std::pair<wxBitmap*, bool>>  bundle_presets;
-    std::map<wxString, wxString>                    preset_bundle_names;
     std::map<wxString, wxString>                    preset_descriptions;
+    std::map<wxString, std::string>                 preset_aliases; // ORCA
+    std::map<wxString, std::string>                 preset_bundle_names;
 
     wxString selected = "";
     //BBS:  move system to the end
@@ -1644,7 +1649,8 @@ void TabPresetComboBox::update()
         wxBitmap* bmp = get_bmp(preset);
         assert(bmp);
 
-        const wxString name = get_preset_name(preset);
+        const wxString name = preset.name;
+        preset_aliases[name] = get_preset_name(preset).ToStdString();
         if (preset.is_system)
             preset_descriptions.emplace(name, from_u8(preset.description));
 
@@ -1726,7 +1732,7 @@ void TabPresetComboBox::update()
     {
         set_label_marker(Append(_L("Bundle presets"), wxNullBitmap, DD_ITEM_STYLE_SPLIT_ITEM));
         for (std::map<wxString, std::pair<wxBitmap*, bool>>::iterator it = bundle_presets.begin(); it != bundle_presets.end(); ++it) {
-            int item_id = Append(it->first, *it->second.first);
+            int item_id = Append(preset_aliases[it->first], *it->second.first);
             SetItemTooltip(item_id, preset_descriptions[it->first]);
             bool is_enabled = it->second.second;
             if (!is_enabled)

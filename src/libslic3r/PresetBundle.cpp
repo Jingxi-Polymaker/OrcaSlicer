@@ -850,6 +850,11 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
             if (!fs::is_directory(entry.path())) continue;
 
             std::string bundle_dir = entry.path().string();
+
+            // Calculate relative path from user folder for prefix
+            fs::path rel_path = fs::relative(entry.path(), folder);
+            std::string prefix = rel_path.string() + "/";
+
             fs::path metadata_file = entry.path() / PRESET_BUNDLE_METADATA;
             if (!fs::exists(metadata_file)) continue;
 
@@ -860,16 +865,22 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
             this->prints.load_presets(bundle_dir, PRESET_PRINT_NAME, substitutions, substitution_rule, [&](Preset& preset) {
                 preset.bundle_id = metadata.id;
                 preset.is_from_bundle = true;
+                // Prepend prefix to the preset's internal name
+                preset.name = prefix + preset.name;
                 metadata.print_presets.push_back(preset.name);
             });
             this->filaments.load_presets(bundle_dir, PRESET_FILAMENT_NAME, substitutions, substitution_rule, [&](Preset& preset) {
                 preset.bundle_id = metadata.id;
                 preset.is_from_bundle = true;
+                // Prepend prefix to the preset's internal name
+                preset.name = prefix + preset.name;
                 metadata.filament_presets.push_back(preset.name);
             });
             this->printers.load_presets(bundle_dir, PRESET_PRINTER_NAME, substitutions, substitution_rule, [&](Preset& preset) {
                 preset.bundle_id = metadata.id;
                 preset.is_from_bundle = true;
+                // Prepend prefix to the preset's internal name
+                preset.name = prefix + preset.name;
                 metadata.printer_presets.push_back(preset.name);
             });
 
@@ -901,6 +912,11 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
             if (!fs::is_directory(entry.path())) continue;
 
             std::string bundle_dir = entry.path().string();
+
+            // Calculate relative path from user folder for prefix
+            fs::path rel_path = fs::relative(entry.path(), folder);
+            std::string prefix = rel_path.string() + "/";
+
             fs::path metadata_file = entry.path() / PRESET_BUNDLE_METADATA;
             if (!fs::exists(metadata_file)) continue;
 
@@ -911,16 +927,22 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
             this->prints.load_presets(bundle_dir, PRESET_PRINT_NAME, substitutions, substitution_rule, [&](Preset& preset) {
                 preset.bundle_id = metadata.id;
                 preset.is_from_bundle = true;
+                // Prepend prefix to the preset's internal name
+                preset.name = prefix + preset.name;
                 metadata.print_presets.push_back(preset.name);
             });
             this->filaments.load_presets(bundle_dir, PRESET_FILAMENT_NAME, substitutions, substitution_rule, [&](Preset& preset) {
                 preset.bundle_id = metadata.id;
                 preset.is_from_bundle = true;
+                // Prepend prefix to the preset's internal name
+                preset.name = prefix + preset.name;
                 metadata.filament_presets.push_back(preset.name);
             });
             this->printers.load_presets(bundle_dir, PRESET_PRINTER_NAME, substitutions, substitution_rule, [&](Preset& preset) {
                 preset.bundle_id = metadata.id;
                 preset.is_from_bundle = true;
+                // Prepend prefix to the preset's internal name
+                preset.name = prefix + preset.name;
                 metadata.printer_presets.push_back(preset.name);
             });
 
@@ -1216,16 +1238,22 @@ bool PresetBundle::import_json_presets(PresetsConfigSubstitutions &            s
             BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << " Preset type is unknown, not loading: " << name;
             return false;
         }
+        // Construct preset name using bundle directory path for uniqueness
+        std::string preset_name = name;
+        if (!bundle_dir.empty()) {
+            preset_name = fs::path(PRESET_LOCAL_DIR / boost::filesystem::path(bundle_dir).filename() / type_subdir / name).string();
+        }
+
         if (overwrite == 0) overwrite = 1;
-        if (auto p = collection->find_preset(name, false)) {
+        if (auto p = collection->find_preset(preset_name, false)) {
             if (p->is_default || p->is_system) {
-                BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << " Preset already present and is system preset, not loading: " << name;
+                BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << " Preset already present and is system preset, not loading: " << preset_name;
                 return false;
             }
-            if (overwrite != 2 && overwrite != 3) overwrite = override_confirm(name); //3: yes to all  2: no to all
+            if (overwrite != 2 && overwrite != 3) overwrite = override_confirm(preset_name); //3: yes to all  2: no to all
         }
         if (overwrite == 0 || overwrite == 2) {
-            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << " Preset already present, not loading: " << name;
+            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << " Preset already present, not loading: " << preset_name;
             return false;
         }
 
@@ -1256,7 +1284,7 @@ bool PresetBundle::import_json_presets(PresetsConfigSubstitutions &            s
             extend_default_config_length(new_config, true, default_preset.config);
         }
 
-        Preset &preset     = collection->load_preset(collection->path_from_name(name, inherit_preset == nullptr), name, std::move(new_config), false);
+        Preset &preset     = collection->load_preset(collection->path_from_name(name, inherit_preset == nullptr), preset_name, std::move(new_config), false);
         if (key_values.find(BBL_JSON_KEY_FILAMENT_ID) != key_values.end())
             preset.filament_id = key_values[BBL_JSON_KEY_FILAMENT_ID];
         preset.is_external = true;
@@ -1281,10 +1309,15 @@ bool PresetBundle::import_json_presets(PresetsConfigSubstitutions &            s
         if (!bundle_dir.empty()) {
             // Extract bundle_id from the bundle directory path for the preset attribute
             std::string bundle_id = boost::filesystem::path(bundle_dir).filename().string();
+
+            // Before saving, set the name to the base name (w/o prefix)
+            preset.name = name;
             if (!save_preset_to_bundle_dir(preset, collection, bundle_id, type_subdir, bundle_dir)) {
-                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to save preset " << preset.name << " to bundle directory";
+                BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to save preset " << preset_name << " to bundle directory";
                 return false;
             }
+            // Set the name to the prefixed name
+            preset.name = preset_name;
         } else {
             preset.save(inherit_preset ? &inherit_preset->config : nullptr);
         }
