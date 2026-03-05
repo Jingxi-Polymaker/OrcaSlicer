@@ -80,7 +80,6 @@ ZUserLogin::ZUserLogin() : wxDialog((wxWindow *) (wxGetApp().mainframe), wxID_AN
         wxString strlang = wxGetApp().current_language_code_safe();
         strlang.Replace("_", "-");
         TargetUrl = wxString::FromUTF8(agent->get_cloud_login_url(strlang.ToStdString()));
-        m_networkOk = TargetUrl.StartsWith("file://");
 
         BOOST_LOG_TRIVIAL(info) << "login url = " << TargetUrl.ToStdString();
 
