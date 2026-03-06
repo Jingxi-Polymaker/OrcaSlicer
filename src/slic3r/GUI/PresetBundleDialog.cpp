@@ -47,12 +47,7 @@ namespace Slic3r {
 
         void PresetBundleDialog::OnFSWatch(wxFileSystemWatcherEvent& e)
         {
-            std::string dir_user_presets = app_config->get("preset_folder");
-            if (dir_user_presets.empty()) {
-                wxGetApp().preset_bundle->load_user_presets(DEFAULT_USER_FOLDER_NAME, ForwardCompatibilitySubstitutionRule::Enable);
-            } else {
-                wxGetApp().preset_bundle->load_user_presets(dir_user_presets, ForwardCompatibilitySubstitutionRule::Enable);
-            }
+            GUI::wxGetApp().preset_bundle->load_presets(*app_config, ForwardCompatibilitySubstitutionRule::EnableSilentDisableSystem);
             wxGetApp().mainframe->update_side_preset_ui();
 
             ListBundles();
@@ -80,7 +75,6 @@ namespace Slic3r {
                 TargetUrl = wxString::Format("%s?lang=%s", std::string(TargetUrl.mb_str()), strlang);
 
             TargetUrl = "file://" + TargetUrl;
-            
 
             wxBoxSizer *topsizer = new wxBoxSizer(wxVERTICAL);
             SetTitle(_L("Preset Bundle"));
