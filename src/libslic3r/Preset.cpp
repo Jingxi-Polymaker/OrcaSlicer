@@ -1312,12 +1312,18 @@ void PresetCollection::load_presets(
                     Preset* inherit_preset = nullptr;
                     ConfigOption* inherits_config = config.option(BBL_JSON_KEY_INHERITS);
 
-                    // check inherits_config
+                    // check inherits_configddwaawdwdwfhhhhhhh
                     if (inherits_config) {
                         ConfigOptionString * option_str = dynamic_cast<ConfigOptionString *> (inherits_config);
                         std::string inherits_value = option_str->value;
                         // Orca: try to find if the parent preset has been renamed
                         inherit_preset = this->find_preset2(inherits_value);
+                        if(!inherit_preset)
+                        {
+                            // unlock();
+                            inherit_preset = find_and_load_unloaded_system_preset(inherits_value);
+                            // lock();
+                        }
 
                     } else {
                         ;

@@ -10,6 +10,7 @@
 #include <optional>
 #include <array>
 #include <boost/filesystem/path.hpp>
+#include <unordered_set>
 
 #define DEFAULT_USER_FOLDER_NAME "default"
 #define BUNDLE_STRUCTURE_JSON_NAME "bundle_structure.json"
@@ -72,6 +73,12 @@ struct FilamentBaseInfo
     int  filament_printable = 3;
 };
 
+enum BundleType{
+    Default = 0,
+    Local,
+    Subscribed,
+};
+
 // Orca: Bundle metadata structure for imported preset bundles
 struct BundleMetadata
 {
@@ -82,6 +89,9 @@ struct BundleMetadata
     std::string                     author;
     long long                       imported_time{0};
     long long                       updated_time{0};
+
+    BundleType                      bundle_type{Default};
+    std::string                     path;
 
     // Cached preset names by type (populated on load)
     std::vector<std::string>        print_presets;
@@ -262,6 +272,8 @@ public:
 
     // Orca: Bundle metadata and cached preset names
     std::map<std::string, BundleMetadata>  m_bundles;
+    fs::path dir_user_presets_local;
+    fs::path dir_user_presets_subscribed;
 
         struct ObsoletePresets
     {

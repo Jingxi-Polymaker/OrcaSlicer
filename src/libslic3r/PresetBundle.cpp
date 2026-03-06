@@ -843,9 +843,12 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
     fs::path    folder(user_folder / user);
     if (!fs::exists(folder)) fs::create_directory(folder);
 
+    m_bundles.clear();
+    
     // Load bundle metadata from _local directory first
     fs::path local_dir(folder / PRESET_LOCAL_DIR);
     if (fs::exists(local_dir)) {
+        dir_user_presets_local = local_dir;
         for (auto& entry : fs::directory_iterator(local_dir)) {
             if (!fs::is_directory(entry.path())) continue;
 
@@ -883,6 +886,8 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
                 preset.name = prefix + preset.name;
                 metadata.printer_presets.push_back(preset.name);
             });
+            metadata.bundle_type = BundleType::Local;
+            metadata.path = metadata_file.string();
 
             m_bundles[metadata.id] = metadata;
         }
@@ -1075,7 +1080,7 @@ PresetsConfigSubstitutions PresetBundle::import_presets(std::vector<std::string>
             import_json_presets(substitutions, file, override_confirm, rule, overwrite, result);
         }
         // Determine if it is a preset bundle
-        if (boost::iends_with(file, ".orca_printer") || boost::iends_with(file, ".orca_filament") || boost::iends_with(file, ".zip")) {
+        if (boost::iends_with(file, ".orca_printer") || boost::iends_with(file, ".orca_bundle") || boost::iends_with(file, ".orca_filament") || boost::iends_with(file, ".zip")) {
             boost::system::error_code ec;
             // create user folder
             fs::path user_folder(data_dir() + "/" + PRESET_USER_DIR);
@@ -1184,6 +1189,8 @@ PresetsConfigSubstitutions PresetBundle::import_presets(std::vector<std::string>
                 if (metadata.save_to_json(metadata_save_path.string())) {
                     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Saved bundle metadata to: " << metadata_save_path.string();
 
+                    metadata.bundle_type = BundleType::Local;
+                    metadata.path = metadata_save_path.string();
                     // Store the bundle metadata in m_bundles for tracking
                     m_bundles[metadata.id] = metadata;
                 } else {

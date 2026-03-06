@@ -1,4 +1,6 @@
+#include "ExportPresetBundleDialog.hpp"
 #include "OrcaCloudServiceAgent.hpp"
+#include "PresetBundleDialog.hpp"
 #include "libslic3r/Technologies.hpp"
 #include "GUI_App.hpp"
 #include "GUI_Init.hpp"
@@ -6916,6 +6918,37 @@ void  GUI_App::show_ip_address_enter_dialog_handler(wxCommandEvent& evt)
 //    //menu->Append(local_menu, _L("Configuration"));
 //    menu->AppendSubMenu(local_menu, _L("Configuration"));
 //}
+
+void GUI_App::open_presetbundledialog(size_t open_on_tab, const std::string& highlight_option)
+{
+    bool app_layout_changed = false;
+    {
+        PresetBundleDialog dlg(mainframe, open_on_tab, highlight_option);
+        dlg.ShowModal();
+        this->plater_->get_current_canvas3D()->force_set_focus();
+        #if ENABLE_GCODE_LINES_ID_IN_H_SLIDER
+            if (dlg.seq_top_layer_only_changed() || dlg.seq_seq_top_gcode_indices_changed())
+        #else
+                if (dlg.seq_top_layer_only_changed())
+        #endif // ENABLE_GCODE_LINES_ID_IN_H_SLIDER
+                    this->plater_->reload_print();
+    }
+}
+void GUI_App::open_exportpresetbundledialog(size_t open_on_tab, const std::string& highlight_option)
+{
+    bool app_layout_changed = false;
+    {
+        ExportPresetBundleDialog dlg(mainframe, open_on_tab, highlight_option);
+        dlg.ShowModal();
+        this->plater_->get_current_canvas3D()->force_set_focus();
+        #if ENABLE_GCODE_LINES_ID_IN_H_SLIDER
+            if (dlg.seq_top_layer_only_changed() || dlg.seq_seq_top_gcode_indices_changed())
+        #else
+                if (dlg.seq_top_layer_only_changed())
+        #endif // ENABLE_GCODE_LINES_ID_IN_H_SLIDER
+                    this->plater_->reload_print();
+    }
+}
 
 void GUI_App::open_preferences(size_t open_on_tab, const std::string& highlight_option)
 {
