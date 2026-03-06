@@ -49,7 +49,9 @@ namespace Slic3r {
 namespace {
 constexpr const char* ORCA_DEFAULT_API_URL = "https://xxx.orcaslicer.com";
 constexpr const char* ORCA_DEFAULT_AUTH_URL = "https://xxx.orcaslicer.com";
+constexpr const char* ORCA_DEFAULT_CLOUD_URL = "https://xxx.orcaslicer.com";
 constexpr const char* ORCA_DEFAULT_PUB_KEY = "xxxxxxxxxxxxx";
+
 constexpr const char* ORCA_HEALTH_PATH = "/api/v1/health";
 constexpr const char* ORCA_SYNC_PULL_PATH = "/api/v1/sync/pull";
 constexpr const char* ORCA_SYNC_PUSH_PATH = "/api/v1/sync/push";
@@ -57,8 +59,11 @@ constexpr const char* ORCA_PROFILES_PATH = "/api/v1/sync/profiles";
 constexpr const char* ORCA_SYNC_STATE_FILE = "sync_state";
 constexpr size_t ORCA_SYNC_MAX_PAYLOAD_SIZE = 1048576; // 1MB size limit
 
+constexpr const char* ORCA_CLOUD_LOGIN_PATH = "/orcaslicer-login";
+
 constexpr const char* CONFIG_ORCA_API_URL = "orca_api_url";
 constexpr const char* CONFIG_ORCA_AUTH_URL = "orca_auth_url";
+constexpr const char* CONFIG_ORCA_CLOUD_URL = "orca_cloud_url";
 constexpr const char* CONFIG_ORCA_PUB_KEY = "orca_pub_key";
 
 constexpr const char* SECRET_STORE_SERVICE = "OrcaSlicer/Auth";
@@ -327,6 +332,7 @@ OrcaCloudServiceAgent::OrcaCloudServiceAgent(std::string log_dir)
     : log_dir(std::move(log_dir))
     , api_base_url(ORCA_DEFAULT_API_URL)
     , auth_base_url(ORCA_DEFAULT_AUTH_URL)
+    , cloud_base_url(ORCA_DEFAULT_CLOUD_URL)
 {
     auth_headers["apikey"] = ORCA_DEFAULT_PUB_KEY;
     pkce_bundle.loopback_port = choose_loopback_port();
@@ -359,6 +365,11 @@ void OrcaCloudServiceAgent::configure_urls(AppConfig* app_config)
         auth_base_url = auth_url;
     }
 
+    std::string cloud_url = app_config->get(CONFIG_ORCA_CLOUD_URL);
+    if (!cloud_url.empty()) {
+        cloud_base_url = cloud_url;
+    }
+
     std::string pub_key = app_config->get(CONFIG_ORCA_PUB_KEY);
     if (!pub_key.empty()) {
         auth_headers["apikey"] = pub_key;
@@ -373,6 +384,11 @@ void OrcaCloudServiceAgent::set_api_base_url(const std::string& url)
 void OrcaCloudServiceAgent::set_auth_base_url(const std::string& url)
 {
     auth_base_url = url;
+}
+
+void OrcaCloudServiceAgent::set_cloud_base_url(const std::string& url)
+{
+    cloud_base_url = url;
 }
 
 void OrcaCloudServiceAgent::set_use_encrypted_token_file(bool use)
@@ -2595,9 +2611,11 @@ std::string OrcaCloudServiceAgent::get_cloud_service_host()
 
 std::string OrcaCloudServiceAgent::get_cloud_login_url(const std::string& language)
 {
-    // Orca uses a local HTML file for the login flow
-    boost::filesystem::path login_path = boost::filesystem::path(resources_dir()) / "web" / "login" / "orca_login.html";
-    return "file://" + login_path.make_preferred().string();
+    std::string url = cloud_base_url + ORCA_CLOUD_LOGIN_PATH;
+    if (!language.empty()) {
+        url += "?lang=" + language;
+    }
+    return url;
 }
 
 std::string OrcaCloudServiceAgent::get_studio_info_url()
