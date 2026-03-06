@@ -951,6 +951,8 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
                 metadata.printer_presets.push_back(preset.name);
             });
 
+            metadata.bundle_type = BundleType::Subscribed;
+            metadata.path = metadata_file.string();
             m_bundles[metadata.id] = metadata;
         }
     }
