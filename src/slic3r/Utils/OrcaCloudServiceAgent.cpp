@@ -707,7 +707,7 @@ int OrcaCloudServiceAgent::user_logout(bool request)
                 body_ss << "{}";
             }
 
-            int result = http_post_auth(auth_constants::LOGOUT_PATH, body_ss.str(), &response, &http_code) ? BAMBU_NETWORK_SUCCESS : BAMBU_NETWORK_ERR_INVALID_HANDLE;
+            int result = http_post_auth(auth_constants::LOGOUT_PATH , body_ss.str(), &response, &http_code) ? BAMBU_NETWORK_SUCCESS : BAMBU_NETWORK_ERR_INVALID_HANDLE;
             if (result != BAMBU_NETWORK_SUCCESS || http_code >= 400) {
                 BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: Orca cloud logout request failed - http_code=" << http_code;
             }
@@ -2172,7 +2172,7 @@ bool OrcaCloudServiceAgent::http_post_token(const std::string& body, std::string
 
 bool OrcaCloudServiceAgent::http_post_auth(const std::string& path, const std::string& body, std::string* response_body, unsigned int* http_code)
 {
-    std::string url = auth_base_url + path;
+    std::string url = auth_base_url + path + "?scope=local";
     std::string token;
     std::map<std::string, std::string> headers_copy;
     {
