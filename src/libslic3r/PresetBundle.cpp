@@ -1451,6 +1451,8 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
         return substitutions;
     }
 
+    dir_user_presets_subscribed = subscribed_base;
+
     // Process each bundle's presets
     for (const auto& bundle_entry : bundle_presets) {
         const std::string& bundle_id = bundle_entry.first;
@@ -1573,6 +1575,8 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
 
             // Store in m_bundles for tracking
             m_bundles[metadata.id] = metadata;
+            m_bundles[metadata.id].bundle_type = BundleType::Subscribed;
+            m_bundles[metadata.id].path = metadata_save_path.string();
         } else {
             BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to save bundle metadata to: " << metadata_save_path.string();
         }
