@@ -2988,6 +2988,15 @@ void MainFrame::init_menubar_as_editor()
                 plater()->reload_print();
         },
         "", nullptr, []() { return true; }, this, 1);
+
+        append_menu_item(
+        m_topbar->GetTopMenu(), wxID_ANY, _L("Preset Bundle") + "\t", "",
+        [this](wxCommandEvent &) {
+            // Orca: Use GUI_App::open_preferences instead of direct call so windows associations are updated on exit
+            wxGetApp().open_presetbundledialog();
+            plater()->get_current_canvas3D()->force_set_focus();
+        },
+        "", nullptr, []() { return true; }, this);
     //parent_menu->Insert(1, preference_item);
 #endif
     // Help menu
