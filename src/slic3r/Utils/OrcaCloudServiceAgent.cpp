@@ -452,80 +452,37 @@ int OrcaCloudServiceAgent::start()
 
 bool OrcaCloudServiceAgent::exchange_auth_code(const std::string& auth_code, const std::string& state, std::string& session_payload)
 {
-    // Validate PKCE state
     const auto expected_state = pkce_bundle.state;
-    if (!expected_state.empty() && state != expected_state) {
+    if (expected_state.empty()) {
+        BOOST_LOG_TRIVIAL(warning) << "[auth] event=code_exchange result=failure reason=no_expected_state";
+        return false;
+    }
+    if (state != expected_state) {
         BOOST_LOG_TRIVIAL(warning) << "[auth] event=code_exchange result=failure reason=state_mismatch";
         return false;
     }
 
-    std::string url = auth_base_url + auth_constants::TOKEN_PATH;
-
-    std::string redirect_uri;
     std::string code_verifier;
-    std::map<std::string, std::string> headers_copy;
-    {
-        std::lock_guard<std::mutex> lock(headers_mutex);
-        headers_copy = extra_headers;
-    }
     {
         std::lock_guard<std::recursive_mutex> lock(state_mutex);
-        redirect_uri = pkce_bundle.redirect;
         code_verifier = pkce_bundle.verifier;
-        for (const auto& pair : auth_headers) {
-            headers_copy[pair.first] = pair.second;
-        }
     }
 
-    bool has_apikey = false;
-    for (const auto& pair : headers_copy) {
-        if (pair.first == "apikey") {
-            has_apikey = true;
-            break;
-        }
-    }
-    if (!has_apikey) {
-        BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: exchange_auth_code - apikey header MISSING! Token request may fail.";
-    }
+    // Exchange the Supabase PKCE code with the token endpoint.
+    // With redirect_to, GoTrue handles Google OAuth internally and redirects to localhost
+    // with a Supabase-generated auth_code (not a raw Google code). The grant_type goes
+    // in the URL query string (same pattern as the refresh_token flow).
+    const std::string token_url = auth_base_url + auth_constants::TOKEN_PATH + "?grant_type=pkce";
+    json body_j;
+    body_j["auth_code"] = auth_code;
+    body_j["code_verifier"] = code_verifier;
 
     std::string response;
     unsigned int http_code = 0;
-    bool success = false;
-
-    try {
-        auto http = Http::post(url);
-
-        for (const auto& pair : headers_copy) {
-            http.header(pair.first, pair.second);
-        }
-
-        http.remove_header("Authorization");
-        http.remove_header("Content-Type");
-        http.form_add("grant_type", "authorization_code");
-        http.form_add("code", auth_code);
-        http.form_add("redirect_uri", redirect_uri);
-        http.form_add("code_verifier", code_verifier);
-
-        http.on_complete([&](std::string body, unsigned resp_status) {
-                success = true;
-                http_code = resp_status;
-                response = body;
-            })
-            .on_error([&](std::string body, std::string error, unsigned resp_status) {
-                success = false;
-                http_code = resp_status;
-                response = body;
-                BOOST_LOG_TRIVIAL(error) << "OrcaCloudServiceAgent: HTTP error - " << error;
-            })
-            .timeout_max(30)
-            .perform_sync();
-
-    } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << "OrcaCloudServiceAgent: exchange_auth_code exception - " << e.what();
-    }
+    const bool success = http_post_token(body_j.dump(), &response, &http_code, token_url);
 
     if (!success || http_code >= 400) {
-        BOOST_LOG_TRIVIAL(error) << "[auth] event=code_exchange result=failure http_code=" << http_code;
+        BOOST_LOG_TRIVIAL(error) << "[auth] event=code_exchange result=failure http_code=" << http_code << " body=" << response;
         return false;
     }
 
@@ -2611,11 +2568,10 @@ std::string OrcaCloudServiceAgent::get_cloud_service_host()
 
 std::string OrcaCloudServiceAgent::get_cloud_login_url(const std::string& language)
 {
-    std::string url = cloud_base_url + ORCA_CLOUD_LOGIN_PATH;
-    if (!language.empty()) {
-        url += "?lang=" + language;
-    }
-    return url;
+    // Orca uses a local HTML file for the login flow
+    boost::filesystem::path login_path = boost::filesystem::path(resources_dir()) / "web" / "login" / "orca_login.html";
+    return "file://" + login_path.make_preferred().string();
+
 }
 
 std::string OrcaCloudServiceAgent::get_studio_info_url()

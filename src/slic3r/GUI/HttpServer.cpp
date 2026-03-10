@@ -184,7 +184,10 @@ std::shared_ptr<HttpServer::Response> HttpServer::bbl_auth_handle_request(const 
 
     const std::string auth_code = url_get_param(url, "code");
     if (!auth_code.empty()) {
-        std::string state = url_get_param(url, "state");
+        std::string state = url_get_param(url, "orca_state");
+        if (state.empty()) {
+            state = url_get_param(url, "state");  // fallback
+        }
         NetworkAgent* agent = wxGetApp().getAgent();
         if (!agent) {
             return std::make_shared<ResponseNotFound>();

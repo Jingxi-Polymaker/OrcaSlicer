@@ -814,9 +814,9 @@
             params.append('provider', provider);
             params.append('code_challenge', pkce.code_challenge);
             params.append('code_challenge_method', pkce.code_challenge_method);
-            params.append('redirect_uri', pkce.redirect_uri);
-            params.append('state', pkce.state);
-            params.append('response_type', 'code');
+            // Use redirect_to so GoTrue handles the Google OAuth callback itself and
+            // redirects back to localhost with a Supabase PKCE code (not a raw Google code).
+            params.append('redirect_to', pkce.redirect_uri + '?orca_state=' + encodeURIComponent(pkce.state));
 
             var fullUrl = url + '?' + params.toString();
 
