@@ -6020,12 +6020,86 @@ void GUI_App::sync_bundle(const std::string& bundle_id, const BundleMetadata& lo
     CallAfter([this, bundle_id, bundle_presets_3level, remote_metadata]() {
         if (!is_closing() && preset_bundle && app_config) {
             preset_bundle->update_subscribed_presets(*app_config, bundle_presets_3level, {{bundle_id, remote_metadata}}, ForwardCompatibilitySubstitutionRule::Enable);
+            // Clear the update_available flag after successful update
+            auto it = preset_bundle->m_bundles.find(bundle_id);
+            if (it != preset_bundle->m_bundles.end()) {
+                it->second.update_available = false;
+            }
             if (mainframe)
                 mainframe->update_side_preset_ui();
-
             BOOST_LOG_TRIVIAL(info) << "sync_bundle: successfully updated bundle " << bundle_id;
         }
     });
+}
+
+void GUI_App::check_bundle_updates()
+{
+    if (!m_agent || !m_agent->is_user_login()) return;
+    if (m_agent->get_provider() != CloudAgentProvider::Orca) return;
+
+    auto orca_agent = std::dynamic_pointer_cast<OrcaCloudServiceAgent>(m_agent->get_cloud_agent());
+    if (!orca_agent) return;
+
+    BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: checking for bundle updates";
+
+    // Fetch all subscribed bundles from cloud
+    std::map<std::string, std::map<std::string, std::map<std::string, std::string>>> subscribed_bundle_presets;
+    std::map<std::string, BundleMetadata> subscribed_bundle_metadata;
+    int result = orca_agent->get_all_subscribed_bundles_presets(&subscribed_bundle_presets, &subscribed_bundle_metadata);
+
+    if (result != 0) {
+        BOOST_LOG_TRIVIAL(warning) << "check_bundle_updates: failed to fetch subscribed bundles, result=" << result;
+        return;
+    }
+
+    // Iterate through local bundles and check for updates
+    if (!preset_bundle) return;
+
+    int bundles_checked = 0;
+    int updates_available = 0;
+
+    for (auto& [bundle_id, local_metadata] : preset_bundle->m_bundles) {
+        // Only check subscribed bundles (those with UUID-style IDs from Orca Cloud)
+        // Skip external bundles (those with name+timestamp IDs)
+        if (!local_metadata.is_subscribed) {
+            continue;
+        }
+
+        // Find corresponding remote metadata
+        auto remote_it = subscribed_bundle_metadata.find(bundle_id);
+        if (remote_it == subscribed_bundle_metadata.end()) {
+            BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: bundle " << bundle_id << " not found in remote subscriptions";
+            continue;
+        }
+
+        const auto& remote_metadata = remote_it->second;
+
+        // Compare versions using Semver
+        auto local_version = Semver::parse(local_metadata.version);
+        auto remote_version = Semver::parse(remote_metadata.version);
+
+        if (!local_version || !remote_version) {
+            BOOST_LOG_TRIVIAL(warning) << "check_bundle_updates: failed to parse versions for bundle " << bundle_id
+                                       << " (local: " << local_metadata.version << ", remote: " << remote_metadata.version << ")";
+            continue;
+        }
+
+        bundles_checked++;
+
+        // Update the runtime-only flag if remote version is newer
+        if (remote_version > local_version) {
+            local_metadata.update_available = true;
+            updates_available++;
+            BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: bundle " << bundle_id << " (" << local_metadata.name
+                                    << ") has update available: local=" << local_metadata.version
+                                    << ", remote=" << remote_metadata.version;
+        } else {
+            local_metadata.update_available = false;
+        }
+    }
+
+    BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: checked " << bundles_checked
+                            << " bundles, found " << updates_available << " updates available";
 }
 
 bool GUI_App::unsubscribe_bundle(const std::string& id)
