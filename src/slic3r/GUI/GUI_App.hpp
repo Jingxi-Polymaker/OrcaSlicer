@@ -513,6 +513,7 @@ public:
     void            stop_sync_user_preset();
 
     // Bundle subscription sync
+    void            check_bundle_updates();
     void            start_sync_subscribed_bundles(bool with_progress_dlg = false);
     void            stop_sync_subscribed_bundles();
     void            sync_bundle(const std::string& bundle_id, const BundleMetadata& local_metadata);
