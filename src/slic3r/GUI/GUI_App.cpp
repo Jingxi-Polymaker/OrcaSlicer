@@ -980,7 +980,7 @@ void GUI_App::post_init()
         // scrn->SetText(_L("Loading user presets..."));
         if (m_agent) {
             start_sync_user_preset();
-            start_sync_subscribed_bundles();
+            // start_sync_subscribed_bundles();
         }
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " sync_user_preset: true";
     } else {
@@ -1644,7 +1644,7 @@ void GUI_App::restart_networking()
 
         if (app_config->get("sync_user_preset") == "true") {
             start_sync_user_preset();
-            start_sync_subscribed_bundles();
+            // start_sync_subscribed_bundles();
         }
         // if (mainframe && this->app_config->get("staff_pick_switch") == "true") {
         //     if (mainframe->m_webview) { mainframe->m_webview->SendDesignStaffpick(has_model_mall()); }
@@ -2586,7 +2586,7 @@ bool GUI_App::OnInit()
 int GUI_App::OnExit()
 {
     stop_sync_user_preset();
-    stop_sync_subscribed_bundles();
+    // stop_sync_subscribed_bundles();
 
     if (m_device_manager) {
         delete m_device_manager;
@@ -4528,7 +4528,7 @@ void GUI_App::request_user_logout()
         mainframe->update_side_preset_ui();
 
         GUI::wxGetApp().stop_sync_user_preset();
-        GUI::wxGetApp().stop_sync_subscribed_bundles();
+        // GUI::wxGetApp().stop_sync_subscribed_bundles();
     }
 }
 
