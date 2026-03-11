@@ -3160,8 +3160,7 @@ void MainFrame::init_menubar_as_editor()
                 plater()->reload_print();
         },
         "", nullptr, []() { return true; }, this, 1);
-
-        //parent_menu->Insert(1, preference_item);
+    //parent_menu->Insert(1, preference_item);
 #endif
     // Help menu
     auto helpMenu = generate_help_menu();

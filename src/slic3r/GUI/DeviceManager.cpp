@@ -2396,33 +2396,16 @@ void MachineObject::set_print_state(std::string status)
 
 int MachineObject::connect(bool use_openssl)
 {
-    BOOST_LOG_TRIVIAL(info) << "MachineObject::connect called - dev_id=" << get_dev_id()
-                           << " dev_ip=" << get_dev_ip()
-                           << " use_openssl=" << use_openssl
-                           << " m_agent=" << (m_agent ? "valid" : "null");
-
-    if (get_dev_ip().empty()) {
-        BOOST_LOG_TRIVIAL(warning) << "MachineObject::connect: dev_ip is empty, returning -1";
-        return -1;
-    }
+    if (get_dev_ip().empty()) return -1;
     std::string username = "bblp";
     std::string password = get_access_code();
 
-    BOOST_LOG_TRIVIAL(info) << "MachineObject::connect: calling connect_printer with username=" << username
-                           << " password_len=" << password.length();
-
     if (m_agent) {
         try {
-            int result = m_agent->connect_printer(get_dev_id(), get_dev_ip(), username, password, use_openssl);
-            BOOST_LOG_TRIVIAL(info) << "MachineObject::connect: connect_printer returned " << result;
-            return result;
-        } catch (const std::exception& e) {
-            BOOST_LOG_TRIVIAL(error) << "MachineObject::connect: exception: " << e.what();
+            return m_agent->connect_printer(get_dev_id(), get_dev_ip(), username, password, use_openssl);
         } catch (...) {
-            BOOST_LOG_TRIVIAL(error) << "MachineObject::connect: unknown exception";
+            ;
         }
-    } else {
-        BOOST_LOG_TRIVIAL(warning) << "MachineObject::connect: m_agent is null, returning -1";
     }
     return -1;
 }
@@ -2618,7 +2601,6 @@ int MachineObject::parse_json(std::string tunnel, std::string payload, bool key_
         if (j_pre.empty()) {
             return 0;
         }
-
         if (j_pre.contains("print")) {
             if (m_active_state == NotActive) m_active_state = Active;
             if (j_pre["print"].contains("command")) {

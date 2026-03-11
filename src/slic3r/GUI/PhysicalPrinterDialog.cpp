@@ -160,7 +160,7 @@ void PhysicalPrinterDialog::build_printhost_settings(ConfigOptionsGroup* m_optgr
             // (printer_agent is coString in config, but we need a dropdown)
             ConfigOptionDef def;
             def.type    = coEnum;
-            def.width   = Field::def_width();
+            def.width   = Field::def_width_wider();
             def.label   = L("Printer Agent");
             def.tooltip = L("Select the network agent implementation for printer communication. "
                             "Available agents are registered at startup.");

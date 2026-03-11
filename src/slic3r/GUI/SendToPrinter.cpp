@@ -1681,7 +1681,6 @@ void SendToPrinterDialog::GetConnection()
         m_connection_status = ConnectionStatus::NOT_START;
     }
 
-    m_waiting_support           = false;
     NetworkAgent *agent         = wxGetApp().getAgent();
     std::string   agent_version = agent ? agent->get_version() : "";
     std::string   dev_ver       = obj->get_ota_version();
