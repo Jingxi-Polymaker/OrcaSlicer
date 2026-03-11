@@ -540,10 +540,10 @@ static const FileWildcards file_wildcards_by_type[FT_SIZE] = {
     /* FT_GCODE */   { "G-code files"sv,    { ".gcode"sv} },
 #ifdef __APPLE__
     /* FT_MODEL */
-    {"Supported files"sv, {".3mf"sv, ".stl"sv, ".oltp"sv, ".stp"sv, ".step"sv, ".svg"sv, ".amf"sv, ".obj"sv, ".usd"sv, ".usda"sv, ".usdc"sv, ".usdz"sv, ".abc"sv, ".ply"sv}},
+    {"Supported files"sv, {".3mf"sv, ".stl"sv, ".oltp"sv, ".stp"sv, ".step"sv, ".svg"sv, ".amf"sv, ".obj"sv, ".usd"sv, ".usda"sv, ".usdc"sv, ".usdz"sv, ".abc"sv, ".ply"sv, ".drc"sv}},
 #else
     /* FT_MODEL */
-    {"Supported files"sv, {".3mf"sv, ".stl"sv, ".oltp"sv, ".stp"sv, ".step"sv, ".svg"sv, ".amf"sv, ".obj"sv}},
+    {"Supported files"sv, {".3mf"sv, ".stl"sv, ".oltp"sv, ".stp"sv, ".step"sv, ".svg"sv, ".amf"sv, ".obj"sv, ".drc"sv}},
 #endif
     /* FT_ZIP */     { "ZIP files"sv,       { ".zip"sv } },
     /* FT_PROJECT */ { "Project files"sv,   { ".3mf"sv} },
@@ -553,6 +553,7 @@ static const FileWildcards file_wildcards_by_type[FT_SIZE] = {
     /* FT_SVG */     { "SVG files"sv,       { ".svg"sv } },
     /* FT_TEX */     { "Texture"sv,         { ".png"sv, ".svg"sv } },
     /* FT_SL1 */     { "Masked SLA files"sv, { ".sl1"sv, ".sl1s"sv } },
+    /* FT_DRC */     { "Draco files"sv,     { ".drc"sv } },
 };
 
 // This function produces a Win32 file dialog file template mask to be consumed by wxWidgets on all platforms.
@@ -1719,7 +1720,7 @@ bool GUI_App::hot_reload_network_plugin()
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": starting hot reload";
 
     wxBusyCursor busy;
-    wxBusyInfo info(_L("Reloading network plugin..."), mainframe);
+    wxBusyInfo info(_L("Reloading network plug-in..."), mainframe);
     wxYield();
     wxWindowDisabler disabler;
 
@@ -1862,7 +1863,7 @@ void GUI_App::show_network_plugin_download_dialog(bool is_update)
             app_config->set_network_plugin_version(selected);
             app_config->save();
 
-            DownloadProgressDialog download_dlg(_L("Downloading Network Plugin"));
+            DownloadProgressDialog download_dlg(_L("Downloading Network Plug-in"));
             download_dlg.ShowModal();
         }
         break;
@@ -2697,6 +2698,18 @@ bool GUI_App::on_init_inner()
     // TODO: Find workaround for GTK4
 #if defined(__WXGTK20__) || defined(__WXGTK3__)
     g_object_set (gtk_settings_get_default (), "gtk-menu-images", TRUE, NULL);
+#endif
+
+#if defined(__WXGTK20__) || defined(__WXGTK3__)
+    // Suppress harmless GTK critical warnings from the GTK3/wxWidgets interaction.
+    // These include widget allocation on hidden widgets and events on unrealized widgets.
+    g_log_set_handler("Gtk", G_LOG_LEVEL_CRITICAL,
+        [](const gchar *log_domain, GLogLevelFlags log_level, const gchar *message, gpointer user_data) {
+            if (message && (strstr(message, "gtk_widget_set_allocation") ||
+                            strstr(message, "WIDGET_REALIZED_FOR_EVENT")))
+                return;
+            g_log_default_handler(log_domain, log_level, message, user_data);
+        }, nullptr);
 #endif
 
 #ifdef WIN32
@@ -4449,7 +4462,11 @@ void GUI_App::get_login_info()
                 GUI::wxGetApp().run_script(strJS);
             }
         }
-        mainframe->m_webview->SetLoginPanelVisibility(true);
+        if(app_config->get_bool("installed_networking")) {
+            mainframe->m_webview->SetLoginPanelVisibility(true);
+        } else {
+            mainframe->m_webview->SetLoginPanelVisibility(false);
+        }
     }
 }
 
@@ -5428,7 +5445,7 @@ void GUI_App::check_new_version_sf(bool show_tips, int by_user)
             }
 
             version_info.url           = prefer_release ? best_release_url : best_pre_url;
-            version_info.version_str   = prefer_release ? best_release.to_string_sf() : best_pre.to_string();
+            version_info.version_str   = prefer_release ? best_release.to_string_sf() : best_pre.to_string_sf();
             version_info.description   = prefer_release ? best_release_content : best_pre_content;
             version_info.force_upgrade = false;
 
@@ -5513,11 +5530,15 @@ bool GUI_App::process_network_msg(std::string dev_id, std::string msg)
         }
         else if (msg == "unsigned_studio") {
             BOOST_LOG_TRIVIAL(info) << "process_network_msg, unsigned_studio";
-            MessageDialog msg_dlg(nullptr,
-                _L("Bambu Lab has implemented a signature verification check in their network plugin that restricts "
-                   "third-party software from communicating with your printer.\n\n"
-                   "As a result, some printing functions are unavailable in OrcaSlicer."),
-                _L("Network Plugin Restriction"), wxAPPLY | wxOK);
+            MessageDialog
+                msg_dlg(nullptr,
+                        _L("To use OrcaSlicer with Bambu Lab printers, you need to enable LAN mode and Developer mode on your printer.\n\n"
+                           "Please go to your printer's settings and:\n"
+                           "1. Turn on LAN mode\n"
+                           "2. Enable Developer mode\n\n"
+                           "Developer mode allows the printer to work exclusively through local network access, "
+                           "enabling full functionality with OrcaSlicer."),
+                        _L("Network Plug-in Restriction"), wxAPPLY | wxOK);
             m_show_error_msgdlg = true;
             msg_dlg.ShowModal();
             m_show_error_msgdlg = false;
@@ -5809,6 +5830,35 @@ void GUI_App::sync_preset(Preset* preset)
 
     // Actually process sync info
     if (needs_init || preset->sync_info.compare("create") == 0) {
+        if (m_create_preset_blocked[preset->type])
+            return;
+        int ret = preset_bundle->get_differed_values_to_update(*preset, values_map);
+        if (!ret) {
+            std::string new_setting_id = m_agent->request_setting_id(preset->name, &values_map, &http_code);
+            if (!new_setting_id.empty()) {
+                setting_id = new_setting_id;
+                result = 0;
+                auto update_time_str = values_map[ORCA_JSON_KEY_UPDATE_TIME];
+                if (!update_time_str.empty())
+                    update_time = std::atoll(update_time_str.c_str());
+            }
+            else {
+                BOOST_LOG_TRIVIAL(trace) << "[sync_preset]init: request_setting_id failed, http code "<<http_code;
+                // do not post new preset this time if http code >= 400
+                if (http_code >= 400) {
+                    result = 0;
+                    updated_info = "hold";
+                } else
+                    result = -1;
+            }
+        }
+        else {
+            BOOST_LOG_TRIVIAL(trace) << "[sync_preset]init: can not generate differed key-values";
+            result = 0;
+            updated_info = "hold";
+        }
+    }
+    else if (preset->sync_info.compare("create") == 0) {
         if (m_create_preset_blocked[preset->type])
             return;
         int ret = preset_bundle->get_differed_values_to_update(*preset, values_map);

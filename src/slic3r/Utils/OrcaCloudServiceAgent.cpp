@@ -665,7 +665,7 @@ int OrcaCloudServiceAgent::user_logout(bool request)
                 body_ss << "{}";
             }
 
-            int result = http_post_auth(auth_constants::LOGOUT_PATH , body_ss.str(), &response, &http_code) ? BAMBU_NETWORK_SUCCESS : BAMBU_NETWORK_ERR_INVALID_HANDLE;
+            int result = http_post_auth(auth_constants::LOGOUT_PATH, body_ss.str(), &response, &http_code) ? BAMBU_NETWORK_SUCCESS : BAMBU_NETWORK_ERR_INVALID_HANDLE;
             if (result != BAMBU_NETWORK_SUCCESS || http_code >= 400) {
                 BOOST_LOG_TRIVIAL(warning) << "OrcaCloudServiceAgent: Orca cloud logout request failed - http_code=" << http_code;
             }
@@ -2572,7 +2572,6 @@ std::string OrcaCloudServiceAgent::get_cloud_login_url(const std::string& langua
     // Orca uses a local HTML file for the login flow
     boost::filesystem::path login_path = boost::filesystem::path(resources_dir()) / "web" / "login" / "orca_login.html";
     return "file://" + login_path.make_preferred().string();
-
 }
 
 std::string OrcaCloudServiceAgent::get_studio_info_url()
