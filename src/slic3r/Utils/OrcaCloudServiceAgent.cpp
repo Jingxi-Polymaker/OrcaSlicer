@@ -55,8 +55,9 @@ constexpr const char* ORCA_DEFAULT_PUB_KEY = "xxxxxxxxxxxxx";
 constexpr const char* ORCA_HEALTH_PATH = "/api/v1/health";
 constexpr const char* ORCA_SYNC_PULL_PATH = "/api/v1/sync/pull";
 constexpr const char* ORCA_SYNC_PUSH_PATH = "/api/v1/sync/push";
-constexpr const char* ORCA_PROFILES_PATH = "/api/v1/sync/profiles";
+constexpr const char* ORCA_SYNC_DELETE_PATH = "/api/v1/sync/delete";
 constexpr const char* ORCA_SYNC_STATE_FILE = "sync_state";
+constexpr const char* ORCA_SYNC_PROFILE_TABLE = "profiles";
 constexpr size_t ORCA_SYNC_MAX_PAYLOAD_SIZE = 1048576; // 1MB size limit
 
 constexpr const char* ORCA_CLOUD_LOGIN_PATH = "/orcaslicer-login";
@@ -1139,7 +1140,7 @@ int OrcaCloudServiceAgent::get_setting_list2(std::string bundle_version, CheckFn
 
 int OrcaCloudServiceAgent::delete_setting(std::string setting_id)
 {
-    std::string path = std::string(ORCA_PROFILES_PATH) + "/" + setting_id;
+    std::string path = std::string(ORCA_SYNC_DELETE_PATH) + "?resource=" + ORCA_SYNC_PROFILE_TABLE + "&id=" + setting_id;
     std::string response;
     unsigned int http_code = 0;
 
