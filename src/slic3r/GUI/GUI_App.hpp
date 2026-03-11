@@ -308,6 +308,8 @@ private:
 
     boost::thread    m_sync_update_thread;
     std::shared_ptr<int> m_user_sync_token;
+    boost::thread    m_bundle_sync_thread;
+    std::shared_ptr<int> m_bundle_sync_token;
     bool             m_is_dark_mode{ false };
     bool             m_adding_script_handler { false };
     bool             m_side_popup_status{false};
@@ -506,7 +508,8 @@ public:
     void            stop_sync_user_preset();
 
     // Bundle subscription sync
-    void            check_bundle_updates();
+    void            start_sync_subscribed_bundles(bool with_progress_dlg = false);
+    void            stop_sync_subscribed_bundles();
     void            sync_bundle(const std::string& bundle_id, const BundleMetadata& local_metadata);
     bool            unsubscribe_bundle(const std::string& id);
 
