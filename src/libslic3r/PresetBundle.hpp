@@ -98,10 +98,6 @@ struct BundleMetadata
     std::vector<std::string>        filament_presets;
     std::vector<std::string>        printer_presets;
 
-    // Runtime-only flags
-    bool                            is_subscribed{false};
-    bool                            update_available{false};
-
     bool load_from_json(const std::string& path);
     bool save_to_json(const std::string& path) const;
 };

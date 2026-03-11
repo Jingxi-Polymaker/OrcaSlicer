@@ -28,6 +28,7 @@
 #include <random>
 #include <sstream>
 
+#include <string>
 #include <wx/filename.h>
 #include <wx/filefn.h>
 #include <wx/secretstore.h>
@@ -56,6 +57,8 @@ constexpr const char* ORCA_HEALTH_PATH = "/api/v1/health";
 constexpr const char* ORCA_SYNC_PULL_PATH = "/api/v1/sync/pull";
 constexpr const char* ORCA_SYNC_PUSH_PATH = "/api/v1/sync/push";
 constexpr const char* ORCA_SYNC_DELETE_PATH = "/api/v1/sync/delete";
+constexpr const char* ORCA_PROFILES_PATH = "/api/v1/sync/profiles";
+constexpr const char* ORCA_SUBSCRIPTIONS_PATH = "/api/v1/subscriptions";
 constexpr const char* ORCA_SYNC_STATE_FILE = "sync_state";
 constexpr const char* ORCA_SYNC_PROFILE_TABLE = "profiles";
 constexpr size_t ORCA_SYNC_MAX_PAYLOAD_SIZE = 1048576; // 1MB size limit
@@ -2601,6 +2604,20 @@ std::string OrcaCloudServiceAgent::get_version()
 // ============================================================================
 // Bundle Subscription Implementation
 // ============================================================================
+
+bool OrcaCloudServiceAgent::unsubscribe_bundle(const std::string& bundle_id)
+{
+    std::string path = std::string(ORCA_SUBSCRIPTIONS_PATH) + "/" + bundle_id;
+    std::string response;
+    unsigned int http_code = 0;
+
+    int result = http_delete(path, &response, &http_code);
+    if (http_code >= 400) {
+        return false;
+    }
+
+    return true;
+}
 
 int OrcaCloudServiceAgent::get_subscribed_bundles(std::vector<BundleMetadata>* bundles)
 {

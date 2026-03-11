@@ -927,7 +927,6 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
 
             BundleMetadata metadata;
             if (!metadata.load_from_json(metadata_file.string())) continue;
-            metadata.is_subscribed = true;
 
             // Load presets from bundle (same logic as __local__)
             this->prints.load_presets(bundle_dir, PRESET_PRINT_NAME, substitutions, substitution_rule, [&](Preset& preset) {
@@ -1544,9 +1543,6 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
 
         // Set imported_time to current time
         metadata.imported_time = std::time(nullptr);
-
-        // Set is_subscribed flag since this is a subscribed bundle
-        metadata.is_subscribed = true;
 
         // Clear and repopulate the preset vectors with current bundle presets
         metadata.print_presets.clear();
