@@ -6047,6 +6047,11 @@ void GUI_App::check_bundle_updates()
     BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: checked " << bundles_checked
                             << " bundles, found " << updates_available << " updates available";
 }
+bool GUI_App::unsubscribe_bundle(const std::string& id)
+{
+    auto orca_agent = std::dynamic_pointer_cast<OrcaCloudServiceAgent>(m_agent->get_cloud_agent());
+    return orca_agent->unsubscribe_bundle(id);
+}
 
 void GUI_App::start_sync_user_preset(bool with_progress_dlg)
 {

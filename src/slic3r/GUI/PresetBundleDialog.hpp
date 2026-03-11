@@ -42,6 +42,7 @@ namespace Slic3r {
                 void create();
 
                 bool DeleteBundleById(const wxString& id);
+                bool UnsubscribeBundleById(const std::string& id);
 
                 bool seq_top_layer_only_changed() const { return m_seq_top_layer_only_changed; }
                 bool recreate_GUI() const { return m_recreate_GUI; }
@@ -52,6 +53,7 @@ namespace Slic3r {
                 void ListBundles();
                 void OpenFolder(const std::string& id);
                 void DeleteBundle(const std::string& id);
+                void UnsubscribeBundle(const std::string& id);
 
                 void OnPresetBundlePage();
 

@@ -10,6 +10,7 @@ let bottomList = null;
 
 let ctxMenu = null;
 let contextRow = null;
+let ctxMenuSubscribed = null;
 
 let selectedBundleId = null;
 
@@ -19,6 +20,7 @@ function OnInit() {
    topList = document.getElementById("topList");
    bottomList = document.getElementById("bottomList");
    ctxMenu = document.getElementById("ctxMenu");
+   ctxMenuSubscribed = document.getElementById("unsubscribe_btn");
   const closeBtn = document.getElementById("close_btn");
    const exportbtn = document.getElementById("export_btn");
 
@@ -42,6 +44,23 @@ function OnInit() {
   topList.addEventListener("contextmenu", (e) => {
     const row = e.target.closest(".row");
     if (!row) return; // top rows only
+
+    const bundleType = String(row.dataset.bundleType || "").toLowerCase();
+    if (bundleType !== "subscribed") return;
+
+    e.preventDefault();
+    selectTopRow(row);
+    contextRow = row;
+    showSubscribedMenu(e.clientX, e.clientY);
+  });
+
+  // for top list rows except subscribed if right click open regular context menu
+  topList.addEventListener("contextmenu", (e) => {
+    const row = e.target.closest(".row");
+    if (!row) return; // top rows only
+    const bundleType = String(row.dataset.bundleType || "").toLowerCase();
+    if (bundleType === "subscribed") return;
+
     e.preventDefault();
 
     selectTopRow(row);
@@ -50,7 +69,7 @@ function OnInit() {
   });
 
   ctxMenu?.addEventListener("click", (e) => {
-    const btn = e.target.closest(".ctx-item");
+    const btn = e.target.closest("[data-action]");
     if (!btn || !contextRow) return;
 
     const tSend = {
@@ -142,7 +161,7 @@ function renderTop() {
   const bundles = Array.from(bundlesById.values());
 
   topList.innerHTML = bundles.map(b => `
-    <div class="row" data-id="${escapeAttr(b.id)}">
+    <div class="row" data-id="${escapeAttr(b.id)}" data-bundle-type="${escapeAttr(String(b.type || "").toLowerCase())}">
       <span title="${escapeAttr(b.name)}">${escapeHtml(b.name)}</span>
       <span title="${escapeAttr(b.type)}">${escapeHtml(b.type)}</span>
       <span title="${escapeAttr(b.author)}">${escapeHtml(b.author)}</span>
@@ -205,17 +224,26 @@ function autoSelectFirstBundle() {
   renderBottomForBundle(selectedBundleId);
 }
 
+function showSubscribedMenu(x, y) {
+  if (!ctxMenu) return;
+  ctxMenu.style.left = `${x}px`;
+  ctxMenu.style.top = `${y}px`;
+  ctxMenu.hidden = false;
+  ctxMenuSubscribed.hidden = false;
+}
 
 function showMenu(x, y) {
   if (!ctxMenu) return;
   ctxMenu.style.left = `${x}px`;
   ctxMenu.style.top = `${y}px`;
   ctxMenu.hidden = false;
+  ctxMenuSubscribed.hidden = true;
 }
 
 function hideMenu() {
   if (!ctxMenu) return;
   ctxMenu.hidden = true;
+  ctxMenuSubscribed.hidden = true;
   contextRow = null;
 }
 // ========= Utilities =========

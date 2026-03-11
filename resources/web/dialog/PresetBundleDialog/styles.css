@@ -158,7 +158,8 @@ body {
   z-index: 9999;
 }
 
-.ctx-item {
+.ctx-item,
+.ctx-item-subscribed {
   display: block;
   width: 100%;
   text-align: left;
@@ -170,7 +171,13 @@ body {
   border-radius: 4px;
 }
 
-.ctx-item:hover { background: var(--ctx-hover); }
+.ctx-item:hover,
+.ctx-item-subscribed:hover { background: var(--ctx-hover); }
+
+.ctx-item[hidden],
+.ctx-item-subscribed[hidden] {
+  display: none;
+}
 
 #AcceptArea {
   flex: 0 0 auto;

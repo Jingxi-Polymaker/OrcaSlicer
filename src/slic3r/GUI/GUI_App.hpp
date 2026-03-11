@@ -508,6 +508,7 @@ public:
     // Bundle subscription sync
     void            check_bundle_updates();
     void            sync_bundle(const std::string& bundle_id, const BundleMetadata& local_metadata);
+    bool            unsubscribe_bundle(const std::string& id);
 
     void            start_http_server();
     void            start_http_server(int port);

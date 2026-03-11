@@ -33,7 +33,8 @@ namespace Slic3r {
 
             Bind(wxEVT_FSWATCHER, &PresetBundleDialog::OnFSWatch, this);
 
-            m_watcher->Add(wxFileName(wxGetApp().preset_bundle->dir_user_presets_local.c_str())); // Windows example
+            m_watcher->Add(wxFileName(wxGetApp().preset_bundle->dir_user_presets_local.c_str())); // _local
+            m_watcher->Add(wxFileName(wxGetApp().preset_bundle->dir_user_presets_subscribed.c_str())); // _subscribed
         }
 
         PresetBundleDialog::~PresetBundleDialog()
@@ -115,6 +116,12 @@ namespace Slic3r {
             const std::string metadata_path = it->second.path;
             const boost::filesystem::path bundle_dir = boost::filesystem::path(metadata_path).parent_path();
 
+            const BundleType bundle_type = it->second.bundle_type;
+            if(bundle_type == BundleType::Subscribed)
+            {
+                //do unsubscribe before deleting locally
+            }
+
             auto remove_from_collection = [&](PresetCollection& c) {
                 std::vector<std::string> to_delete;
                 for (const auto& p : c.get_presets()) {
@@ -137,6 +144,11 @@ namespace Slic3r {
 
             bundle->update_compatible(PresetSelectCompatibleType::Always);
             return true;
+        }
+
+        bool PresetBundleDialog::UnsubscribeBundleById(const std::string& id)
+        {
+            return wxGetApp().unsubscribe_bundle(id);
         }
 
         void PresetBundleDialog::on_dpi_changed(const wxRect &suggested_rect) { this->Refresh(); }
@@ -183,6 +195,11 @@ namespace Slic3r {
                     {
                         std::string id = j["bundle_id"];
                         DeleteBundle(id);
+                    }
+                    else if(j["action"] == "unsubscribe_bundle")
+                    {
+                        std::string id = j["bundle_id"];
+                        UnsubscribeBundle(id);
                     }
                 }
 
@@ -254,6 +271,33 @@ namespace Slic3r {
             if (rc != wxYES)
                 return;
 
+            if (!DeleteBundleById(id)) {
+                wxMessageBox(_L("Failed to remove bundle."), _L("Remove Bundle"), wxOK | wxICON_ERROR, this);
+                return;
+            }
+            wxGetApp().mainframe->update_side_preset_ui();
+        }
+
+        void PresetBundleDialog::UnsubscribeBundle(const std::string& id)
+        {
+            if (id.empty())
+                return;
+
+            const int rc = wxMessageBox(
+                _L("Unsubscribe bundle and delete bundle from folder?"),
+                _L("Unsubscribe and Delete Bundle"),
+                wxYES_NO | wxNO_DEFAULT | wxICON_WARNING,
+                this);
+
+            if (rc != wxYES)
+                return;
+
+            if(!UnsubscribeBundleById(id))
+            {
+                wxMessageBox(_L("Failed to unsubscribe bundle."), _L("Unsubscribe Bundle"), wxOK | wxICON_ERROR, this);
+                return;
+            }
+            
             if (!DeleteBundleById(id)) {
                 wxMessageBox(_L("Failed to remove bundle."), _L("Remove Bundle"), wxOK | wxICON_ERROR, this);
                 return;
