@@ -7,8 +7,6 @@
 #include "libslic3r/Utils.hpp"
 #include "NetworkAgent.hpp"
 #include "BBLNetworkPlugin.hpp"
-#include "BBLCloudServiceAgent.hpp"
-#include "BBLPrinterAgent.hpp"
 
 namespace Slic3r {
 
@@ -103,23 +101,6 @@ void NetworkAgent::set_load_error(const std::string& message, const std::string&
 // ============================================================================
 // Constructors
 // ============================================================================
-
-NetworkAgent::NetworkAgent(std::string log_dir)
-{
-    auto& plugin = BBLNetworkPlugin::instance();
-
-    if (plugin.is_loaded()) {
-        // Create agent if not already created
-        if (!plugin.has_agent()) {
-            plugin.create_agent(log_dir);
-        }
-
-        m_cloud_agent = std::make_shared<BBLCloudServiceAgent>();
-        m_printer_agent = std::make_shared<BBLPrinterAgent>();
-        m_printer_agent->set_cloud_agent(m_cloud_agent);
-        m_printer_agent_id = m_printer_agent->get_agent_info().id;
-    }
-}
 
 NetworkAgent::NetworkAgent(std::shared_ptr<ICloudServiceAgent> cloud_agent,
                            std::shared_ptr<IPrinterAgent> printer_agent)

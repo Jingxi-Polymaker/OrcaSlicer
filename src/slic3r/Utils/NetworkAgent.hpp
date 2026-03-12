@@ -41,9 +41,6 @@ public:
     static void clear_load_error();
     static void set_load_error(const std::string& message, const std::string& technical_details, const std::string& attempted_path);
 
-    // Traditional constructor (uses BBL DLL via singleton)
-    NetworkAgent(std::string log_dir);
-
     // Sub-agent composition constructor (uses injected sub-agents)
     NetworkAgent(std::shared_ptr<ICloudServiceAgent> cloud_agent,
                  std::shared_ptr<IPrinterAgent> printer_agent);

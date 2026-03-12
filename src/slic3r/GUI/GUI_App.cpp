@@ -3453,6 +3453,25 @@ bool GUI_App::on_init_network(bool try_backup)
         m_agent->start();
     }
 
+    // When using Orca cloud alongside the BBL network plugin, the BBL DLL agent still
+    // needs to be created and configured (config dir, certs, country, start) so that
+    // BBLPrinterAgent can use it for LAN discovery and printer communication.
+    if (should_load_networking_plugin && !m_networking_need_update &&
+        app_config->get_bool("use_orca_cloud")) {
+        auto& plugin = BBLNetworkPlugin::instance();
+        if (plugin.is_loaded() && !plugin.has_agent()) {
+            plugin.create_agent(data_directory);
+        }
+        if (plugin.has_agent()) {
+            BBLCloudServiceAgent bbl;
+            bbl.set_config_dir(data_directory);
+            bbl.init_log();
+            bbl.set_cert_file(resources_dir() + "/cert", "slicer_base64.cer");
+            bbl.set_country_code(app_config->get_country_code());
+            bbl.start();
+        }
+    }
+
     if (!should_load_networking_plugin) {
         int result = Slic3r::NetworkAgent::unload_network_module();
         BOOST_LOG_TRIVIAL(info) << "on_init_network, unload_network_module, result = " << result;
