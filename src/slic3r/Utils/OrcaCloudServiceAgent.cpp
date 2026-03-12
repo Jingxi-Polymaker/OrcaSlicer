@@ -2619,7 +2619,7 @@ bool OrcaCloudServiceAgent::unsubscribe_bundle(const std::string& bundle_id)
     return true;
 }
 
-int OrcaCloudServiceAgent::get_subscribed_bundles(std::vector<BundleMetadata>* bundles)
+int OrcaCloudServiceAgent::get_subscribed_bundles(std::vector<std::pair<std::string, std::string>>* bundles)
 {
     if (!bundles) return -1;
 
@@ -2645,10 +2645,7 @@ int OrcaCloudServiceAgent::get_subscribed_bundles(std::vector<BundleMetadata>* b
         }
 
         for (const auto& bundle_json : json["data"]) {
-            BundleMetadata metadata;
-            if (bundle_json.contains("id")) metadata.id = bundle_json["id"].get<std::string>();
-            if (bundle_json.contains("version")) metadata.version = bundle_json["version"].get<std::string>();
-            bundles->push_back(metadata);
+            bundles->push_back(std::make_pair(bundle_json["id"].get<std::string>(), bundle_json["version"].get<std::string>()));
         }
 
         BOOST_LOG_TRIVIAL(info) << "get_subscribed_bundles: loaded " << bundles->size() << " bundles";

@@ -1371,22 +1371,22 @@ void PresetBundle::save_user_presets(AppConfig& config, std::map<std::string, st
 //Orca: Import subscribed bundle presets (load and save to disk in one operation)
 PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
     AppConfig& config,
-    const std::string& bundle_id,
     const std::map<std::string, std::map<std::string, std::string>>& bundle_presets,
-    const BundleMetadata& bundle_metadata,
+    const BundleMetadata& remote_metadata,
+    BundleMetadata* local_metadata,
     ForwardCompatibilitySubstitutionRule substitution_rule)
 {
     PresetsConfigSubstitutions substitutions;
     std::string errors_cumulative;
     bool process_added = false, filament_added = false, machine_added = false;
 
-    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " enter, substitution_rule " << substitution_rule << ", bundle_id: " << bundle_id << ", preset count: " << bundle_presets.size();
+    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " enter, substitution_rule " << substitution_rule << ", bundle_id: " << remote_metadata.id << ", preset count: " << bundle_presets.size();
 
     // Helper lambda to find and delete a preset from any collection
     auto delete_preset_from_collection = [this](const std::string& preset_name) -> bool {
         PresetCollection* collections[] = {&this->prints, &this->filaments, &this->printers};
         for (auto* coll : collections) {
-            if (Preset* preset = coll->find_preset(preset_name, false, true)) {
+            if (coll->find_preset(preset_name, false, true)) {
                 coll->delete_preset(preset_name);
                 return true;
             }
@@ -1413,7 +1413,7 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
     };
 
     // Remove obsolete presets for this bundle (before importing new ones)
-    auto local_bundle_iter = m_bundles.find(bundle_id);
+    auto local_bundle_iter = m_bundles.find(remote_metadata.id);
     if (local_bundle_iter != m_bundles.end()) {
         const BundleMetadata& local_metadata = local_bundle_iter->second;
         int total_removed = 0;
@@ -1424,7 +1424,7 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
         total_removed += remove_obsolete_presets(local_metadata.printer_presets, bundle_presets, "printer");
 
         if (total_removed > 0) {
-            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": deleted " << total_removed << " obsolete presets from bundle " << bundle_id;
+            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": deleted " << total_removed << " obsolete presets from bundle " << remote_metadata.id;
         }
     }
 
@@ -1448,7 +1448,7 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
     dir_user_presets_subscribed = subscribed_base;
 
     // Create bundle directory
-    boost::filesystem::path bundle_dir(subscribed_base / bundle_id);
+    boost::filesystem::path bundle_dir(subscribed_base / remote_metadata.id);
     if (!boost::filesystem::exists(bundle_dir))
         boost::filesystem::create_directories(bundle_dir, ec);
     if (ec) {
@@ -1461,7 +1461,7 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
         const std::string& preset_name = preset_entry.first;
         std::map<std::string, std::string> value_map = preset_entry.second; // Make a copy since we might modify it
 
-        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " importing preset: " << preset_name << " from bundle: " << bundle_id;
+        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " importing preset: " << preset_name << " from bundle: " << remote_metadata.id;
 
         // Get the type first
         auto type_iter = value_map.find(BBL_JSON_KEY_TYPE);
@@ -1504,7 +1504,7 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
                 Preset* preset = preset_collection->find_preset(preset_name, false, true);
                 if (preset) {
                     // Use helper function to save preset to bundle directory
-                    if (!save_preset_to_bundle_dir(*preset, preset_collection, bundle_id, type_subdir, bundle_dir.string())) {
+                    if (!save_preset_to_bundle_dir(*preset, preset_collection, remote_metadata.id, type_subdir, bundle_dir.string())) {
                         BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to save preset " << preset_name << " to bundle directory";
                         continue;
                     }
@@ -1518,10 +1518,32 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
     }
 
     // Save bundle metadata
-    BundleMetadata metadata = bundle_metadata;
+    // Use local metadata as the "base", if present
+    BundleMetadata metadata;
+    if (local_metadata == nullptr) {
+        // Try to find local metadata if not given
+        auto bundle_it = m_bundles.find(remote_metadata.id);
+        if (bundle_it != m_bundles.end())
+            local_metadata = &bundle_it->second;
+    }
+
+    if (local_metadata != nullptr)
+        metadata = *local_metadata;
+
+    // Set the data from remote
+    // This is done instead of having to copy runtime values from
+    // the local onto a copy of the remote data, since its not as frequently
+    // that more remote data will be added
+    metadata.id = remote_metadata.id;
+    metadata.name = remote_metadata.name;
+    metadata.version = remote_metadata.version;
+    metadata.description = remote_metadata.version;
+    metadata.author = remote_metadata.author;
 
     // Set imported_time to current time
-    metadata.imported_time = std::time(nullptr);
+    if (local_metadata == nullptr)
+        metadata.imported_time = std::time(nullptr);
+    metadata.updated_time = std::time(nullptr);
 
     // Set is_subscribed flag since this is a subscribed bundle
     metadata.is_subscribed = true;
