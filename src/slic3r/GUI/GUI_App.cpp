@@ -5807,27 +5807,6 @@ void GUI_App::reload_settings()
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << " cloud user preset number is: " << user_presets.size();
         preset_bundle->load_user_presets(*app_config, user_presets, ForwardCompatibilitySubstitutionRule::Enable);
         preset_bundle->save_user_presets(*app_config, get_delete_cache_presets());
-
-        // Import subscribed bundle presets (Orca Cloud only)
-        if (m_agent->get_provider() == CloudAgentProvider::Orca) {
-            auto orca_agent = std::dynamic_pointer_cast<OrcaCloudServiceAgent>(m_agent->get_cloud_agent());
-            std::map<std::string, std::map<std::string, std::map<std::string, std::string>>> subscribed_bundle_presets;
-            std::map<std::string, BundleMetadata> subscribed_bundle_metadata;
-            int subscribed_result = orca_agent->get_all_subscribed_bundles_presets(&subscribed_bundle_presets, &subscribed_bundle_metadata);
-            if (subscribed_result == 0) {
-                BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << " subscribed bundle preset number is: " << subscribed_bundle_presets.size();
-                // Process each bundle individually
-                for (const auto& bundle_entry : subscribed_bundle_presets) {
-                    const std::string& bundle_id = bundle_entry.first;
-                    const auto& bundle_presets = bundle_entry.second;
-                    const auto& metadata = subscribed_bundle_metadata.at(bundle_id);
-                    preset_bundle->update_subscribed_presets(*app_config, bundle_id, bundle_presets, metadata, ForwardCompatibilitySubstitutionRule::Enable);
-                }
-            } else {
-                BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << __LINE__ << " failed to import subscribed bundles, result: " << subscribed_result;
-            }
-        }
-
         mainframe->update_side_preset_ui();
     }
 }
@@ -6068,13 +6047,30 @@ void GUI_App::check_bundle_updates()
     BOOST_LOG_TRIVIAL(info) << "check_bundle_updates: checking for bundle updates";
 
     // Fetch all subscribed bundles from cloud
-    std::map<std::string, std::map<std::string, std::map<std::string, std::string>>> subscribed_bundle_presets;
-    std::map<std::string, BundleMetadata> subscribed_bundle_metadata;
-    int result = orca_agent->get_all_subscribed_bundles_presets(&subscribed_bundle_presets, &subscribed_bundle_metadata);
+    std::vector<BundleMetadata> subscribed_bundles;
+    int result = orca_agent->get_subscribed_bundles(&subscribed_bundles);
 
     if (result != 0) {
         BOOST_LOG_TRIVIAL(warning) << "check_bundle_updates: failed to fetch subscribed bundles, result=" << result;
         return;
+    }
+
+    // Fetch presets for each bundle
+    std::map<std::string, std::map<std::string, std::map<std::string, std::string>>> subscribed_bundle_presets;
+    std::map<std::string, BundleMetadata> subscribed_bundle_metadata;
+
+    for (const auto& bundle : subscribed_bundles) {
+        std::map<std::string, std::map<std::string, std::string>> presets;
+        BundleMetadata metadata;
+        int preset_result = orca_agent->get_shared_bundle(bundle.id, &presets, &metadata);
+
+        if (preset_result == 0) {
+            subscribed_bundle_presets[bundle.id] = presets;
+            subscribed_bundle_metadata[bundle.id] = metadata;
+        } else {
+            BOOST_LOG_TRIVIAL(warning) << "check_bundle_updates: Failed to get presets for bundle_id=" << bundle.id << ", result=" << preset_result;
+            // Continue with other bundles even if one fails
+        }
     }
 
     // Iterate through local bundles and check for updates
@@ -6339,11 +6335,30 @@ void GUI_App::start_sync_subscribed_bundles(bool with_progress_dlg)
             if (m_agent && m_agent->is_user_login() && preset_bundle) {
                 auto orca_agent = std::dynamic_pointer_cast<OrcaCloudServiceAgent>(m_agent->get_cloud_agent());
                 if (orca_agent) {
-                    std::map<std::string, std::map<std::string, std::map<std::string, std::string>>> subscribed_bundle_presets;
-                    std::map<std::string, BundleMetadata> subscribed_bundle_metadata;
-                    int result = orca_agent->get_all_subscribed_bundles_presets(&subscribed_bundle_presets, &subscribed_bundle_metadata);
+                    // Get list of subscribed bundles
+                    std::vector<BundleMetadata> subscribed_bundles;
+                    int result = orca_agent->get_subscribed_bundles(&subscribed_bundles);
+
                     if (result == 0) {
-                        BOOST_LOG_TRIVIAL(info) << "start_sync_subscribed_bundles: initial fetch found " << subscribed_bundle_presets.size() << " presets";
+                        // Fetch presets for each bundle
+                        std::map<std::string, std::map<std::string, std::map<std::string, std::string>>> subscribed_bundle_presets;
+                        std::map<std::string, BundleMetadata> subscribed_bundle_metadata;
+
+                        for (const auto& bundle : subscribed_bundles) {
+                            std::map<std::string, std::map<std::string, std::string>> presets;
+                            BundleMetadata metadata;
+                            int preset_result = orca_agent->get_shared_bundle(bundle.id, &presets, &metadata);
+
+                            if (preset_result == 0) {
+                                subscribed_bundle_presets[bundle.id] = presets;
+                                subscribed_bundle_metadata[bundle.id] = metadata;
+                            } else {
+                                BOOST_LOG_TRIVIAL(warning) << "start_sync_subscribed_bundles: Failed to get presets for bundle_id=" << bundle.id << ", result=" << preset_result;
+                                // Continue with other bundles even if one fails
+                            }
+                        }
+
+                        BOOST_LOG_TRIVIAL(info) << "start_sync_subscribed_bundles: initial fetch found " << subscribed_bundle_presets.size() << " bundles";
                         initial_fetch_ok = true;
 
                         // Report progress if dialog is shown

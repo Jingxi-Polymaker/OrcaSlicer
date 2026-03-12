@@ -2745,49 +2745,4 @@ int OrcaCloudServiceAgent::get_shared_bundle(const std::string& bundle_id, std::
     }
 }
 
-int OrcaCloudServiceAgent::get_all_subscribed_bundles_presets(
-    std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>* bundle_presets,
-    std::map<std::string, BundleMetadata>* bundle_metadata)
-{
-    if (!bundle_presets || !bundle_metadata) return -1;
-
-    BOOST_LOG_TRIVIAL(info) << "get_all_subscribed_bundles_presets: fetching all subscribed bundles";
-
-    // First, get the list of all subscribed bundles
-    std::vector<BundleMetadata> version_only_bundle;
-    int result = get_subscribed_bundles(&version_only_bundle);
-    if (result != 0) {
-        BOOST_LOG_TRIVIAL(error) << "get_all_subscribed_bundles_presets: failed to get subscribed bundles, result=" << result;
-        return result;
-    }
-
-    BOOST_LOG_TRIVIAL(info) << "get_all_subscribed_bundles_presets: found " << version_only_bundle.size() << " subscribed bundles";
-
-    // For each bundle, fetch its presets
-    for (const auto& version_only_bundle : version_only_bundle) {
-        BOOST_LOG_TRIVIAL(info) << "get_all_subscribed_bundles_presets: fetching presets for bundle_id=" << version_only_bundle.id;
-
-        BundleMetadata bundle;
-        std::map<std::string, std::map<std::string, std::string>> presets;
-        int preset_result = get_shared_bundle(version_only_bundle.id, &presets, &bundle);
-
-        if (preset_result != 0) {
-            BOOST_LOG_TRIVIAL(warning) << "get_all_subscribed_bundles_presets: failed to get presets for bundle_id=" << version_only_bundle.id << ", result=" << preset_result;
-            // Continue with other bundles even if one fails
-            continue;
-        }
-
-        // Store the presets in the nested map: bundle_presets[bundle_id][preset_name][key] = value
-        (*bundle_presets)[bundle.id] = presets;
-
-        // Store the bundle metadata (mandatory parameter)
-        (*bundle_metadata)[bundle.id] = bundle;
-
-        BOOST_LOG_TRIVIAL(info) << "get_all_subscribed_bundles_presets: loaded " << presets.size() << " presets for bundle_id=" << bundle.id;
-    }
-
-    BOOST_LOG_TRIVIAL(info) << "get_all_subscribed_bundles_presets: total bundles loaded=" << bundle_presets->size();
-    return 0;
-}
-
 } // namespace Slic3r
