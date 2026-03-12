@@ -5816,7 +5816,13 @@ void GUI_App::reload_settings()
             int subscribed_result = orca_agent->get_all_subscribed_bundles_presets(&subscribed_bundle_presets, &subscribed_bundle_metadata);
             if (subscribed_result == 0) {
                 BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << " subscribed bundle preset number is: " << subscribed_bundle_presets.size();
-                preset_bundle->update_subscribed_presets(*app_config, subscribed_bundle_presets, subscribed_bundle_metadata, ForwardCompatibilitySubstitutionRule::Enable);
+                // Process each bundle individually
+                for (const auto& bundle_entry : subscribed_bundle_presets) {
+                    const std::string& bundle_id = bundle_entry.first;
+                    const auto& bundle_presets = bundle_entry.second;
+                    const auto& metadata = subscribed_bundle_metadata.at(bundle_id);
+                    preset_bundle->update_subscribed_presets(*app_config, bundle_id, bundle_presets, metadata, ForwardCompatibilitySubstitutionRule::Enable);
+                }
             } else {
                 BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << __LINE__ << " failed to import subscribed bundles, result: " << subscribed_result;
             }
@@ -6035,15 +6041,10 @@ void GUI_App::sync_bundle(const std::string& bundle_id, const BundleMetadata& lo
                             << " from version " << local_metadata.version
                             << " to version " << remote_metadata.version;
 
-    // Wrap the 2-level map into a 3-level map (bundle_id -> preset_type -> preset_name -> config)
-    // to match what update_subscribed_presets expects
-    std::map<std::string, std::map<std::string, std::map<std::string, std::string>>> bundle_presets_3level;
-    bundle_presets_3level[bundle_id] = bundle_presets_2level;
-
     // Import the updated bundle on the main thread
-    CallAfter([this, bundle_id, bundle_presets_3level, remote_metadata]() {
+    CallAfter([this, bundle_id, bundle_presets_2level, remote_metadata]() {
         if (!is_closing() && preset_bundle && app_config) {
-            preset_bundle->update_subscribed_presets(*app_config, bundle_presets_3level, {{bundle_id, remote_metadata}}, ForwardCompatibilitySubstitutionRule::Enable);
+            preset_bundle->update_subscribed_presets(*app_config, bundle_id, bundle_presets_2level, remote_metadata, ForwardCompatibilitySubstitutionRule::Enable);
             // Clear the update_available flag after successful update
             auto it = preset_bundle->m_bundles.find(bundle_id);
             if (it != preset_bundle->m_bundles.end()) {

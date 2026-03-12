@@ -148,11 +148,12 @@ public:
     // BBS Load user presets
     PresetsConfigSubstitutions load_user_presets(std::string user, ForwardCompatibilitySubstitutionRule rule);
     PresetsConfigSubstitutions load_user_presets(AppConfig &config, std::map<std::string, std::map<std::string, std::string>>& my_presets, ForwardCompatibilitySubstitutionRule rule);
-    // Orca: Import subscribed bundle presets (load and save to disk in one operation)
+    // Orca: Import subscribed bundle presets (load and save to disk in one operation), handles one bundle at a time
     PresetsConfigSubstitutions update_subscribed_presets(
         AppConfig& config,
-        const std::map<std::string, std::map<std::string, std::map<std::string, std::string>>>& bundle_presets,
-        const std::map<std::string, BundleMetadata>& bundle_metadata,
+        const std::string& bundle_id,
+        const std::map<std::string, std::map<std::string, std::string>>& bundle_presets,
+        const BundleMetadata& bundle_metadata,
         ForwardCompatibilitySubstitutionRule rule);
     PresetsConfigSubstitutions import_presets(std::vector<std::string> &files, std::function<int(std::string const &)> override_confirm, ForwardCompatibilitySubstitutionRule rule, AppConfig& config);
     bool                       import_json_presets(PresetsConfigSubstitutions &            substitutions,
