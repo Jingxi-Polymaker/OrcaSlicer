@@ -2572,9 +2572,11 @@ std::string OrcaCloudServiceAgent::get_cloud_service_host()
 
 std::string OrcaCloudServiceAgent::get_cloud_login_url(const std::string& language)
 {
-    // Orca uses a local HTML file for the login flow
-    boost::filesystem::path login_path = boost::filesystem::path(resources_dir()) / "web" / "login" / "orca_login.html";
-    return "file://" + login_path.make_preferred().string();
+    std::string url = cloud_base_url + ORCA_CLOUD_LOGIN_PATH;
+    if (!language.empty()) {
+        url += "?lang=" + language;
+    }
+    return url;
 }
 
 std::string OrcaCloudServiceAgent::get_studio_info_url()
