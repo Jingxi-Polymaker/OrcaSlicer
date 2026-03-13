@@ -6217,7 +6217,7 @@ void GUI_App::start_sync_user_preset(bool with_progress_dlg)
             int count = 0, sync_count = 0;
             std::vector<Preset> presets_to_sync;
             std::vector<std::pair<std::string, std::string>> bundles_to_sync;
-            std::vector<std::string> bundles_synced;
+            std::unordered_set<std::string> bundles_synced;
             while (!t.expired()) {
                 count++;
                 if (count % 20 == 0) {
@@ -6269,16 +6269,53 @@ void GUI_App::start_sync_user_preset(bool with_progress_dlg)
                     // sync subscribed bundles, if orca
                     if (orca_agent)
                     {
+                        bundles_to_sync.clear();
+                        bundles_synced.clear();
                         orca_agent->get_subscribed_bundles(&bundles_to_sync);
                         // Iterate over the bundles, and update/create
                         for (const auto& bundle_entry : bundles_to_sync) {
-                            BOOST_LOG_TRIVIAL(info) << "syncing " << bundle_entry.first;
+                            bundles_synced.insert(bundle_entry.first);
                             // Sync each bundle individually
                             sync_bundle(bundle_entry.first, bundle_entry.second);
-
                             // Small delay between bundle syncs to avoid overwhelming the server
                             boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
                         }
+
+                        // Check what bundles are no longer subscribed to and should be deleted
+                        bool has_deletion = false;
+                        for (auto it = preset_bundle->m_bundles.begin(); it != preset_bundle->m_bundles.end(); ) {
+                            if (!it->second.is_subscribed)
+                                continue;
+                            if (bundles_synced.find(it->first) == bundles_synced.end()) {
+                                has_deletion = true;
+
+                                // Delete the presets first
+                                for (auto printer : it->second.printer_presets)
+                                    preset_bundle->printers.delete_preset(printer);
+                                for (auto filament : it->second.filament_presets)
+                                    preset_bundle->filaments.delete_preset(filament);
+                                for (auto print : it->second.print_presets)
+                                    preset_bundle->prints.delete_preset(print);
+
+                                // Delete the bundle folder and bundle
+                                fs::path bundle_folder = fs::path(it->second.path.c_str()).parent_path();
+                                boost::system::error_code ec;
+                                boost::filesystem::remove_all(bundle_folder, ec);
+                                it = preset_bundle->m_bundles.erase(it);
+                            } else {
+                                ++it;
+                            }
+                        }
+                        // Update UI on main thread after deletion
+                        if (has_deletion)
+                            CallAfter([this]() {
+                                if (!is_closing() && preset_bundle && mainframe) {
+                                    // update_compatible() ensures proper selection state after deletion
+                                    preset_bundle->update_compatible(PresetSelectCompatibleType::Never);
+                                    preset_bundle->update_multi_material_filament_presets();
+                                    mainframe->update_side_preset_ui();
+                                }
+                            });
                     }
                 } else {
                     boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
