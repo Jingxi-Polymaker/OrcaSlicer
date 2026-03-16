@@ -1580,7 +1580,7 @@ void PresetCollection::load_project_embedded_presets(std::vector<Preset*>& proje
                     inherits_value.replace(pos, 1, 1, '~');
                     option_str->value = inherits_value;
                 }*/
-                inherit_preset = this->find_preset(inherits_value, false, true);
+                inherit_preset = this->find_preset2(inherits_value, true);
             }
             const Preset& default_preset = this->default_preset_for(config);
             if (inherit_preset) {
@@ -1899,13 +1899,6 @@ bool PresetCollection::load_user_preset(std::string name, std::map<std::string, 
             ConfigOptionString * option_str = dynamic_cast<ConfigOptionString *> (inherits_config);
             std::string inherits_value = option_str->value;
             inherit_preset = this->find_preset2(inherits_value, true);
-
-            // Final fallback and try to load inherit profiles from resources
-            if (inherit_preset == nullptr) {
-                unlock();
-                inherit_preset = find_and_load_unloaded_system_preset(inherits_value);
-                lock();
-            }
         }
         const Preset& default_preset = this->default_preset_for(cloud_config);
         if (inherit_preset) {
@@ -2921,6 +2914,10 @@ Preset* PresetCollection::find_preset2(const std::string& name, bool auto_match/
                 }
             }
         }
+    }
+
+    if (preset == nullptr) {
+        preset = find_and_load_unloaded_system_preset(name);
     }
 
     return preset;
