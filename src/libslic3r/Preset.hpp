@@ -878,7 +878,7 @@ private:
     friend class PresetBundle;
 
     //BBS: mutex
-    std::mutex          m_mutex;
+    std::recursive_mutex          m_mutex;
 
     // Orca: used for validation only
     int m_errors = 0;
