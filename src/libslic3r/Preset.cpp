@@ -1322,13 +1322,6 @@ void PresetCollection::load_presets(
                         std::string inherits_value = option_str->value;
                         // Orca: try to find if the parent preset has been renamed
                         inherit_preset = this->find_preset2(inherits_value);
-                        if(!inherit_preset)
-                        {
-                            // unlock();
-                            inherit_preset = find_and_load_unloaded_system_preset(inherits_value);
-                            // lock();
-                        }
-
                     } else {
                         ;
                     }
