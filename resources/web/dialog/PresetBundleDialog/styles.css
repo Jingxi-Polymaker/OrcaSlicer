@@ -159,7 +159,7 @@ body {
 }
 
 .ctx-item,
-.ctx-item-subscribed {
+.ctx-item-subscribed, .ctx-item-delete {
   display: block;
   width: 100%;
   text-align: left;
@@ -172,10 +172,13 @@ body {
 }
 
 .ctx-item:hover,
-.ctx-item-subscribed:hover { background: var(--ctx-hover); }
+.ctx-item-subscribed:hover ,
+.ctx-item-delete:hover
+{ background: var(--ctx-hover); }
 
 .ctx-item[hidden],
-.ctx-item-subscribed[hidden] {
+.ctx-item-subscribed[hidden] ,
+.ctx-item-delete[hidden]{
   display: none;
 }
 

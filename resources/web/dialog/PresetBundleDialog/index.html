@@ -44,14 +44,14 @@
 
   <!-- Footer -->
     <div id="AcceptArea">
-      <div id="export_btn" class="ButtonStyleConfirm ButtonTypeChoice">Export Presets</div>
+      <div id="export_btn" class="ButtonStyleConfirm ButtonTypeChoice" hidden>Export Presets</div>
       <div id="close_btn" class="ButtonStyleRegular ButtonTypeChoice">Close</div>
     </div>
 
   <!-- Context Menu -->
   <div id="ctxMenu" class="ctx" hidden>
     <button class="ctx-item" data-action="open_folder">Open folder in explorer</button>
-    <button class="ctx-item" data-action="delete_bundle">Delete bundle</button>
+    <button id = "delete_btn" class="ctx-item-delete" data-action="delete_bundle" hidden>Delete bundle</button>
     <button id = "unsubscribe_btn" class="ctx-item-subscribed" data-action="unsubscribe_bundle" hidden>Unsubscribe bundle</button>
   </div>
 

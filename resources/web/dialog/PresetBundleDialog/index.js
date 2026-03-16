@@ -12,6 +12,8 @@ let ctxMenu = null;
 let contextRow = null;
 let ctxMenuSubscribed = null;
 
+let ctxMenuDelete = null;
+
 let selectedBundleId = null;
 
 // ========= Init =========
@@ -21,6 +23,7 @@ function OnInit() {
    bottomList = document.getElementById("bottomList");
    ctxMenu = document.getElementById("ctxMenu");
    ctxMenuSubscribed = document.getElementById("unsubscribe_btn");
+   ctxMenuDelete = document.getElementById("delete_btn");
   const closeBtn = document.getElementById("close_btn");
    const exportbtn = document.getElementById("export_btn");
 
@@ -229,7 +232,8 @@ function showSubscribedMenu(x, y) {
   ctxMenu.style.left = `${x}px`;
   ctxMenu.style.top = `${y}px`;
   ctxMenu.hidden = false;
-  ctxMenuSubscribed.hidden = false;
+  ctxMenuDelete.hidden = true;
+  // ctxMenuSubscribed.hidden = false;
 }
 
 function showMenu(x, y) {
@@ -237,6 +241,7 @@ function showMenu(x, y) {
   ctxMenu.style.left = `${x}px`;
   ctxMenu.style.top = `${y}px`;
   ctxMenu.hidden = false;
+  ctxMenuDelete.hidden = false;
   ctxMenuSubscribed.hidden = true;
 }
 
