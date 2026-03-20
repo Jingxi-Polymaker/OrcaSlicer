@@ -8,9 +8,6 @@
 #include <wx/app.h>
 #include <wx/event.h>
 #include <wx/filename.h>
-#include <wx/msw/app.h>
-#include <wx/msw/menu.h>
-#include <wx/msw/window.h>
 #include <wx/scrolwin.h>
 #include <wx/sizer.h>
 #include <libslic3r/PresetBundle.hpp>
