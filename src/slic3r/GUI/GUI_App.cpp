@@ -5829,7 +5829,7 @@ void GUI_App::remove_user_presets()
     }
 }
 
-bool GUI_App::check_preset_parent_available(const std::pair<string, std::map<string, string>>& preset_data)
+bool GUI_App::check_preset_parent_available(const std::pair<std::string, std::map<std::string, std::string>>& preset_data)
 {
     std::string inherits_name = preset_data.second.at(BBL_JSON_KEY_INHERITS);
     // // If contains "fdm_", "@System", and "@base", is a common base template that doesn't need to be installed
@@ -5845,7 +5845,7 @@ bool GUI_App::check_preset_parent_available(const std::pair<string, std::map<str
     return true;
 }
 
-void GUI_App::add_pending_vendor_preset(const std::pair<string, std::map<string, string>>& preset_data)
+void GUI_App::add_pending_vendor_preset(const std::pair<std::string, std::map<std::string, std::string>>& preset_data)
 {
     Preset::Type type;
     if (preset_data.second.at(BBL_JSON_KEY_TYPE) == PRESET_IOT_PRINT_TYPE)

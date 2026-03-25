@@ -836,6 +836,7 @@ bool GuideFrame::apply_config(AppConfig *app_config, PresetBundle *preset_bundle
     // Not switch filament
     //get_first_added_material_preset(AppConfig::SECTION_FILAMENTS, first_added_filament);
 
+    // ORCA: functionality moved to PresetBundle::apply_vendor_config; keeping for future reference
     // // For each @System filament, check if a vendor-specific override exists
     // // in the loaded profiles. If so, replace the @System variant with the
     // // override (e.g. replace "Generic ABS @System" with BBL "Generic ABS").

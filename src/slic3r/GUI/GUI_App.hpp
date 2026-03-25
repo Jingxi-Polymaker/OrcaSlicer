@@ -516,8 +516,8 @@ public:
     void            remove_user_presets();
 
     // ORCA: functions for loading unloaded vendors to allow for proper inheritance when syncing user presets/bundles
-    bool            check_preset_parent_available(const std::pair<string, std::map<string, string>>& preset_data);
-    void            add_pending_vendor_preset(const std::pair<string, std::map<string, string>>& preset_data);
+    bool            check_preset_parent_available(const std::pair<std::string, std::map<std::string, std::string>>& preset_data);
+    void            add_pending_vendor_preset(const std::pair<std::string, std::map<std::string, std::string>>& preset_data);
     void            load_pending_vendors();
 
     void            sync_preset(Preset* preset);

@@ -294,10 +294,8 @@ std::string PresetBundle::find_preset_vendor(const std::string &preset_name, Pre
                 if (preset_entry.contains(BBL_JSON_KEY_NAME) && preset_entry[BBL_JSON_KEY_NAME].is_string())
                     p_name = preset_entry[BBL_JSON_KEY_NAME].get<std::string>();
 
-                if (p_name != preset_name) {
-                    // BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Checking " << preset_name << " against " << p_name;
+                if (p_name != preset_name)
                     continue;
-                }
 
                 // Found the preset! Get the vendor name and install the entire bundle
                 BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Found preset " << p_name
@@ -306,7 +304,7 @@ std::string PresetBundle::find_preset_vendor(const std::string &preset_name, Pre
                 return vendor_name;
             }
         }
-        catch (Exception e) {
+        catch (const std::exception &e) {
             BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to find vendor name for " << preset_name << ": " << e.what();
             return "";
         }
@@ -1157,29 +1155,6 @@ bool PresetBundle::apply_vendor_config(
     const std::string& preferred_printer_variant,
     const std::string& preferred_filament)
 {
-    // Log all input arguments
-    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " called with arguments:";
-    BOOST_LOG_TRIVIAL(info) << "  new_vendors count: " << new_vendors.size();
-    for (const auto& vendor : new_vendors) {
-        BOOST_LOG_TRIVIAL(info) << "    vendor: " << vendor.first << ", models count: " << vendor.second.size();
-        for (const auto& model : vendor.second) {
-            std::string variants;
-            for (const auto& variant : model.second) {
-                if (!variants.empty()) variants += ", ";
-                variants += variant;
-            }
-            BOOST_LOG_TRIVIAL(info) << "      model: " << model.first << ", variants: [" << variants << "]";
-        }
-    }
-    BOOST_LOG_TRIVIAL(info) << "  new_filaments count: " << new_filaments.size();
-    for (const auto& filament : new_filaments) {
-        BOOST_LOG_TRIVIAL(info) << "    filament: " << filament.first << " = " << filament.second;
-    }
-    BOOST_LOG_TRIVIAL(info) << "  app_config: " << (app_config ? "valid" : "null");
-    BOOST_LOG_TRIVIAL(info) << "  preferred_printer_model: " << preferred_printer_model;
-    BOOST_LOG_TRIVIAL(info) << "  preferred_printer_variant: " << preferred_printer_variant;
-    BOOST_LOG_TRIVIAL(info) << "  preferred_filament: " << preferred_filament;
-
     namespace fs = boost::filesystem;
 
     // Get current configuration from AppConfig
