@@ -5802,6 +5802,12 @@ void GUI_App::reload_settings()
         std::map<std::string, std::map<std::string, std::string>> user_presets;
         m_agent->get_user_presets(&user_presets);
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << " cloud user preset number is: " << user_presets.size();
+        // Check the user presets for any system vendors that need to be installed
+        for (auto data : user_presets) {
+            if (!check_preset_parent_available(data))
+                add_pending_vendor_preset(data);
+        }
+        load_pending_vendors();
         preset_bundle->load_user_presets(*app_config, user_presets, ForwardCompatibilitySubstitutionRule::Enable);
         preset_bundle->save_user_presets(*app_config, get_delete_cache_presets());
         mainframe->update_side_preset_ui();
@@ -5821,6 +5827,73 @@ void GUI_App::remove_user_presets()
         //update ui
         mainframe->update_side_preset_ui();
     }
+}
+
+bool GUI_App::check_preset_parent_available(const std::pair<string, std::map<string, string>>& preset_data)
+{
+    std::string inherits_name = preset_data.second.at(BBL_JSON_KEY_INHERITS);
+    // // If contains "fdm_", "@System", and "@base", is a common base template that doesn't need to be installed
+    if (inherits_name.find("fdm_") != std::string::npos || inherits_name.find("@System") != std::string::npos || inherits_name.find("@base") != std::string::npos)
+        return true;
+
+    if (preset_data.second.at(BBL_JSON_KEY_TYPE) == PRESET_IOT_PRINT_TYPE)
+        return preset_bundle->prints.find_preset2(inherits_name) != nullptr;
+    else if (preset_data.second.at(BBL_JSON_KEY_TYPE) == PRESET_IOT_PRINTER_TYPE)
+        return preset_bundle->printers.find_preset2(inherits_name) != nullptr;
+    else if (preset_data.second.at(BBL_JSON_KEY_TYPE) == PRESET_IOT_FILAMENT_TYPE)
+        return preset_bundle->filaments.find_preset2(inherits_name) != nullptr;
+    return true;
+}
+
+void GUI_App::add_pending_vendor_preset(const std::pair<string, std::map<string, string>>& preset_data)
+{
+    Preset::Type type;
+    if (preset_data.second.at(BBL_JSON_KEY_TYPE) == PRESET_IOT_PRINT_TYPE)
+        type = Preset::Type::TYPE_PRINT;
+    else if (preset_data.second.at(BBL_JSON_KEY_TYPE) == PRESET_IOT_PRINTER_TYPE)
+        type = Preset::Type::TYPE_PRINTER;
+    else if (preset_data.second.at(BBL_JSON_KEY_TYPE) == PRESET_IOT_FILAMENT_TYPE)
+        type = Preset::Type::TYPE_FILAMENT;
+    std::string inherits_name = preset_data.second.at(BBL_JSON_KEY_INHERITS);
+
+    // Add the corresponding vendor
+    std::string vendor_name = PresetBundle::find_preset_vendor(inherits_name, type);
+    if (need_add_vendors.find(vendor_name) == need_add_vendors.end())
+        need_add_vendors[vendor_name] = std::map<std::string, std::set<std::string>>();
+
+    // Add printers/filament if applicable
+    if (type == Preset::Type::TYPE_PRINTER) {
+        // Extract float from preset name if present
+        std::string model_name = inherits_name;
+        std::regex float_regex(R"((\b\d+\.\d+))");
+        std::smatch match;
+        if (std::regex_search(model_name, match, float_regex) && match.size() > 1) {
+            // Get variant i.e., nozzle diameter
+            std::string nozzle_diameter = match[1].str();
+            // Get model name
+            model_name.erase(model_name.find(nozzle_diameter));
+            model_name.erase(model_name.rfind(' '));
+            if(need_add_vendors[vendor_name].find(model_name) == need_add_vendors[vendor_name].end())
+                need_add_vendors[vendor_name][model_name] = std::set<std::string>();
+            
+            need_add_vendors[vendor_name][model_name].insert(nozzle_diameter);
+        }
+    }
+    else if (type == Preset::Type::TYPE_FILAMENT) {
+        need_add_filaments[inherits_name] = "true";
+    }
+}
+
+void GUI_App::load_pending_vendors()
+{
+    if (need_add_vendors.size() == 0 && need_add_filaments.size() == 0)
+        return;
+
+    preset_bundle->apply_vendor_config(need_add_vendors, need_add_filaments, app_config, false);
+    app_config->save();
+
+    need_add_vendors.clear();
+    need_add_filaments.clear();
 }
 
 void GUI_App::sync_preset(Preset* preset)
@@ -6013,10 +6086,9 @@ void GUI_App::sync_bundle(std::string bundle_id, std::string version)
     }
 
     // Fetch the latest bundle data from cloud
-    // Note: get_shared_bundle returns a 2-level map (preset_type -> preset_name -> config)
-    std::map<std::string, std::map<std::string, std::string>> bundle_presets_2level;
+    std::map<std::string, std::map<std::string, std::string>> bundle_presets;
     BundleMetadata remote_metadata;
-    int result = orca_agent->get_shared_bundle(bundle_id, &bundle_presets_2level, &remote_metadata);
+    int result = orca_agent->get_shared_bundle(bundle_id, &bundle_presets, &remote_metadata);
 
     if (result != 0) {
         BOOST_LOG_TRIVIAL(warning) << "sync_bundle: failed to fetch bundle " << bundle_id << ", result=" << result;
@@ -6024,9 +6096,16 @@ void GUI_App::sync_bundle(std::string bundle_id, std::string version)
     }
 
     // Import the updated bundle on the main thread
-    CallAfter([this, bundle_id, bundle_presets_2level, local_metadata, remote_metadata]() {
+    CallAfter([this, bundle_id, bundle_presets, local_metadata, remote_metadata]() {
         if (!is_closing() && preset_bundle && app_config) {
-            preset_bundle->update_subscribed_presets(*app_config, bundle_presets_2level, remote_metadata, local_metadata, ForwardCompatibilitySubstitutionRule::Enable);
+            // Check the presets for any system vendors that need to be installed
+            for (auto data : bundle_presets) {
+                if (!check_preset_parent_available(data)) {
+                    add_pending_vendor_preset(data);
+                }
+            }
+            load_pending_vendors();
+            preset_bundle->update_subscribed_presets(*app_config, bundle_presets, remote_metadata, local_metadata, ForwardCompatibilitySubstitutionRule::Enable);
             // Clear the update_available flag after successful update
             auto it = preset_bundle->m_bundles.find(bundle_id);
             if (it != preset_bundle->m_bundles.end()) {
