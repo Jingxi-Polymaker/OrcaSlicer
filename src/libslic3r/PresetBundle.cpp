@@ -2426,6 +2426,7 @@ void PresetBundle::update_system_maps()
     this->sla_prints   .update_map_alias_to_profile_name();
     this->filaments    .update_map_alias_to_profile_name();
     this->sla_materials.update_map_alias_to_profile_name();
+    this->printers     .update_map_alias_to_profile_name();
 
     this->filaments.update_library_profile_excluded_from();
 }
@@ -2450,13 +2451,13 @@ void PresetBundle::load_installed_printers(const AppConfig &config)
 
 const std::string& PresetBundle::get_preset_name_by_alias( const Preset::Type& preset_type, const std::string& alias) const
 {
-    // there are not aliases for Printers profiles
-    if (preset_type == Preset::TYPE_PRINTER || preset_type == Preset::TYPE_INVALID)
+    if (preset_type == Preset::TYPE_INVALID)
         return alias;
 
     const PresetCollection& presets = preset_type == Preset::TYPE_PRINT     ? prints :
                                       preset_type == Preset::TYPE_SLA_PRINT ? sla_prints :
                                       preset_type == Preset::TYPE_FILAMENT  ? filaments :
+                                      preset_type == Preset::TYPE_PRINTER   ? printers :
                                       sla_materials;
 
     return presets.get_preset_name_by_alias(alias);
