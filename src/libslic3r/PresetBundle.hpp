@@ -116,6 +116,10 @@ public:
                                                     std::vector<Preset>            &in_filament_presets,
                                                     bool                            apply_extruder,
                                                     std::optional<std::vector<int>> filament_maps_new);
+
+    // ORCA: utility function to find the vendor for a given preset name                                                    
+    static std::string find_preset_vendor(const std::string& preset_name, Preset::Type type);
+
     PresetBundle();
     PresetBundle(const PresetBundle &rhs);
     PresetBundle& operator=(const PresetBundle &rhs);
@@ -168,6 +172,27 @@ public:
     void update_user_presets_directory(const std::string preset_folder);
     void remove_user_presets_directory(const std::string preset_folder);
     void update_system_preset_setting_ids(std::map<std::string, std::map<std::string, std::string>>& system_presets);
+
+    // Apply vendor configuration changes (Core library version, no GUI dependencies)
+    // This function installs vendors from resources and loads them into the preset bundle
+    //
+    // Parameters:
+    //   new_vendors: Map of vendor names to their enabled printer models and variants
+    //   new_filaments: Map of filament names to their settings
+    //   app_config: Pointer to AppConfig to update with new vendor/filament selections
+    //   preferred_printer_model: Optional preferred printer model to select
+    //   preferred_printer_variant: Optional preferred printer variant to select
+    //   preferred_filament: Optional preferred filament to select
+    //
+    // Returns: true if successful, false otherwise
+    bool apply_vendor_config(
+        const std::map<std::string, std::map<std::string, std::set<std::string>>>& new_vendors,
+        const std::map<std::string, std::string>& new_filaments,
+        AppConfig* app_config,
+        bool overwrite = true,
+        const std::string& preferred_printer_model = std::string(),
+        const std::string& preferred_printer_variant = std::string(),
+        const std::string& preferred_filament = std::string());
 
     //BBS: add API to get previous machine
     int validate_presets(const std::string &file_name, DynamicPrintConfig& config, std::set<std::string>& different_gcodes);

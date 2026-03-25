@@ -300,6 +300,14 @@ private:
     bool m_networking_cancel_update { false };
     std::shared_ptr<UpgradeNetworkJob> m_upgrade_network_job;
 
+    // ORCA: for installing vendors on the main thread when presets to be synced requires it
+    // vendor structure is:
+    // [vendor_name]: { model: variants, model: variants, ... }
+    // filaments structure is:
+    // [filament_name]: true/false, ...
+    std::map<std::string, std::map<std::string, std::set<std::string>>> need_add_vendors;
+    std::map<std::string, std::string> need_add_filaments;
+
     // login widget
     ZUserLogin*     login_dlg { nullptr };
 
@@ -507,6 +515,12 @@ public:
     void            push_notification(const MachineObject* obj, wxString msg, wxString title = wxEmptyString, UserNotificationStyle style = UserNotificationStyle::UNS_NORMAL);
     void            reload_settings();
     void            remove_user_presets();
+
+    // ORCA: functions for loading unloaded vendors to allow for proper inheritance when syncing user presets/bundles
+    bool            check_preset_parent_available(const std::pair<std::string, std::map<std::string, std::string>>& preset_data);
+    void            add_pending_vendor_preset(const std::pair<std::string, std::map<std::string, std::string>>& preset_data);
+    void            load_pending_vendors();
+
     void            sync_preset(Preset* preset);
     void            start_sync_user_preset(bool with_progress_dlg = false);
     void            stop_sync_user_preset();

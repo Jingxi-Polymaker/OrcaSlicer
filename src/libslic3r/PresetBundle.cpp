@@ -237,6 +237,83 @@ DynamicPrintConfig PresetBundle::construct_full_config(
     return out;
 }
 
+std::string PresetBundle::find_preset_vendor(const std::string &preset_name, Preset::Type type)
+{
+    // Get the resources preset directory (contains all bundled vendor profiles)
+    fs::path system_dir = fs::path(Slic3r::resources_dir()) / PRESET_PROFILES_DIR;
+    if (!fs::exists(system_dir) || !fs::is_directory(system_dir)) {
+        BOOST_LOG_TRIVIAL(debug) << __FUNCTION__ << " Resources profiles directory does not exist: " << system_dir.string();
+        return "";
+    }
+
+    // Determine which preset list key to search for based on type
+    const char* preset_list_key = nullptr;
+    if (type == Preset::Type::TYPE_PRINT)
+        preset_list_key = BBL_JSON_KEY_PROCESS_LIST;
+    else if (type == Preset::Type::TYPE_FILAMENT)
+        preset_list_key = BBL_JSON_KEY_FILAMENT_LIST;
+    else if (type == Preset::Type::TYPE_PRINTER)
+        preset_list_key = BBL_JSON_KEY_MACHINE_LIST;
+    else {
+        // Not supported for other types
+        return "";
+    }
+
+    // Iterate through vendor JSON files in the system directory
+    for (auto& dir_entry : fs::directory_iterator(system_dir)) {
+        std::string vendor_file = dir_entry.path().string();
+        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Checking vendor: " << vendor_file;
+        if (!Slic3r::is_json_file(vendor_file))
+            continue;
+
+        // Get vendor name (filename without .json extension)
+        std::string vendor_name = dir_entry.path().filename().string();
+        vendor_name.erase(vendor_name.size() - 5); // Remove ".json"
+
+        try {
+            // Load and parse the vendor JSON file
+            boost::nowide::ifstream ifs(vendor_file);
+            json j;
+            ifs >> j;
+
+            // Check if the preset list key exists
+            if (!j.contains(preset_list_key))
+                continue;
+
+            auto& preset_list = j[preset_list_key];
+            if (!preset_list.is_array())
+                continue;
+
+            // Search for the preset in the list
+            for (auto& preset_entry : preset_list) {
+                if (!preset_entry.is_object())
+                    continue;
+
+                // Get the preset name
+                std::string p_name;
+                if (preset_entry.contains(BBL_JSON_KEY_NAME) && preset_entry[BBL_JSON_KEY_NAME].is_string())
+                    p_name = preset_entry[BBL_JSON_KEY_NAME].get<std::string>();
+
+                if (p_name != preset_name)
+                    continue;
+
+                // Found the preset! Get the vendor name and install the entire bundle
+                BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Found preset " << p_name
+                                            << " in vendor bundle " << vendor_name;
+                
+                return vendor_name;
+            }
+        }
+        catch (const std::exception &e) {
+            BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Failed to find vendor name for " << preset_name << ": " << e.what();
+            return "";
+        }
+    }
+
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " Could not find vendor for preset " << preset_name;
+    return "";
+}
+
 PresetBundle::PresetBundle()
     : prints(Preset::TYPE_PRINT, Preset::print_options(), static_cast<const PrintRegionConfig &>(FullPrintConfig::defaults()))
     , filaments(Preset::TYPE_FILAMENT, Preset::filament_options(), static_cast<const PrintRegionConfig &>(FullPrintConfig::defaults()), "Default Filament")
@@ -1069,6 +1146,160 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(AppConfig &          
     return substitutions;
 }
 
+bool PresetBundle::apply_vendor_config(
+    const std::map<std::string, std::map<std::string, std::set<std::string>>>& new_vendors,
+    const std::map<std::string, std::string>& new_filaments,
+    AppConfig* app_config,
+    bool overwrite,
+    const std::string& preferred_printer_model,
+    const std::string& preferred_printer_variant,
+    const std::string& preferred_filament)
+{
+    namespace fs = boost::filesystem;
+
+    // Get current configuration from AppConfig
+    const auto old_vendors = app_config->vendors();
+    const auto old_filaments = app_config->has_section(AppConfig::SECTION_FILAMENTS)
+        ? app_config->get_section(AppConfig::SECTION_FILAMENTS)
+        : std::map<std::string, std::string>();
+
+    // Find vendors that need installation
+    const auto vendor_dir = (fs::path(Slic3r::data_dir()) / PRESET_SYSTEM_DIR).make_preferred();
+
+    std::vector<std::string> install_bundles;
+    for (const auto &it : new_vendors) {
+        if (it.second.size() > 0) {
+            auto vendor_file = vendor_dir / (it.first + ".json");
+            if (!fs::exists(vendor_file)) {
+                install_bundles.emplace_back(it.first);
+            }
+        }
+    }
+
+    // Install bundles from resources
+    if (!install_bundles.empty()) {
+        BOOST_LOG_TRIVIAL(info) << "Installing " << install_bundles.size() << " vendor bundles from resources";
+        if (!Slic3r::install_vendor_bundles_from_resources(install_bundles)) {
+            BOOST_LOG_TRIVIAL(error) << "Failed to install vendor bundles";
+            return false;
+        }
+    } else {
+        BOOST_LOG_TRIVIAL(info) << "No bundles need to be installed from resource directory";
+    }
+
+    // For each @System filament, check if a vendor-specific override exists
+    // in the loaded profiles. If so, replace the @System variant with the
+    // override (e.g. replace "Generic ABS @System" with BBL "Generic ABS").
+    // When printers from the default bundle are also selected, keep @System
+    // too since those printers need it.
+    static const std::string system_suffix              = " @System";
+    auto                     it_default                 = new_vendors.find(PresetBundle::ORCA_DEFAULT_BUNDLE);
+    bool                     has_default_bundle_printer = it_default != new_vendors.end() && !it_default->second.empty();
+
+    // Check if any non-default vendor has selected printers
+    bool has_vendor_printer = false;
+    for (const auto& [vendor, models] : new_vendors) {
+        if (vendor != PresetBundle::ORCA_DEFAULT_BUNDLE && !models.empty()) {
+            has_vendor_printer = true;
+            break;
+        }
+    }
+
+    std::map<std::string, std::string> supplemented_filaments;
+    for (const auto& [name, value] : new_filaments) {
+        if (name.size() > system_suffix.size() &&
+            name.compare(name.size() - system_suffix.size(), system_suffix.size(), system_suffix) == 0) {
+            std::string short_name = name.substr(0, name.size() - system_suffix.size());
+
+            if (has_vendor_printer) {
+                // Check if this filament exists in the loaded vendor profiles
+                // For @System filaments, we check if the short_name exists as a vendor-specific filament
+                bool has_vendor_filament = false;
+                for (const auto& [vendor, models] : new_vendors) {
+                    if (vendor != PresetBundle::ORCA_DEFAULT_BUNDLE) {
+                        auto vendor_it = this->vendors.find(vendor);
+                        // Check if this vendor is loaded in the preset bundle
+                        if (vendor_it != this->vendors.end()) {
+                            // Vendor is loaded, check if the filament exists
+                            for (auto f : vendor_it->second.default_filaments) {
+                                BOOST_LOG_TRIVIAL(info) << " checking if vendor filament " << f << " matches " << short_name << "(" << name << ")";
+                                if (f.find(short_name) != std::string::npos) {
+                                    BOOST_LOG_TRIVIAL(info) << name << " has filament from vendor: " << vendor;
+                                    has_vendor_filament = true;
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                if (has_vendor_filament) {
+                    supplemented_filaments[short_name] = value;
+                    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Replacing @System filament: '" << name << "' -> '" << short_name << "'";
+                    if (has_default_bundle_printer) {
+                        supplemented_filaments[name] = value;
+                        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " Also keeping '" << name << "' for default bundle printers";
+                    }
+                    continue;
+                }
+            }
+        }
+        supplemented_filaments[name] = value;
+    }
+
+    // Update AppConfig - merge with existing values instead of overwriting depending on bool
+    if (overwrite) {
+        app_config->set_section(AppConfig::SECTION_FILAMENTS, supplemented_filaments);
+        app_config->set_vendors(new_vendors);
+    }
+    else {
+        // Merge filaments
+        std::map<std::string, std::string> merged_filaments = old_filaments;
+        for (const auto& [name, value] : supplemented_filaments) {
+            merged_filaments[name] = value;
+        }
+        app_config->set_section(AppConfig::SECTION_FILAMENTS, merged_filaments);
+
+        // Merge vendors
+        std::map<std::string, std::map<std::string, std::set<std::string>>> merged_vendors = old_vendors;
+        for (const auto& [vendor, models] : new_vendors) {
+            auto& vendor_entry = merged_vendors[vendor];
+            for (const auto& [model, variants] : models) {
+                auto& model_entry = vendor_entry[model];
+                model_entry.insert(variants.begin(), variants.end());
+            }
+        }
+        app_config->set_vendors(merged_vendors);
+    }
+
+    // Load presets with new configuration
+    this->load_presets(*app_config, ForwardCompatibilitySubstitutionRule::Enable,
+        {preferred_printer_model, preferred_printer_variant, preferred_filament, std::string()});
+
+    // Ensure active filament compatibility
+    // If the active filament is not in the wizard-selected filaments, switch to the first
+    // compatible wizard-selected filament. This handles the first-run case where load_presets
+    // falls back to "Generic PLA" even though the user selected a different filament.
+    if (!supplemented_filaments.empty()) {
+        bool active_filament_selected = supplemented_filaments.count(this->filament_presets.front()) > 0;
+        if (!active_filament_selected) {
+            for (const auto& [filament_name, _] : supplemented_filaments) {
+                const Preset* preset = this->filaments.find_preset(filament_name);
+                if (preset && preset->is_visible && preset->is_compatible) {
+                    this->filaments.select_preset_by_name(filament_name, true);
+                    this->filament_presets.front() = this->filaments.get_selected_preset_name();
+                    break;
+                }
+            }
+        }
+    }
+
+    // Export selections
+    this->export_selections(*app_config);
+    return true;
+}
+
 PresetsConfigSubstitutions PresetBundle::import_presets(std::vector<std::string> &              files,
                                                         std::function<int(std::string const &)> override_confirm,
                                                         ForwardCompatibilitySubstitutionRule    rule,
@@ -1499,15 +1730,13 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
             }
 
             // If preset was loaded/added, save it to the bundle directory
-            if (preset_added && preset_collection) {
-                // Find the preset that was just loaded
-                Preset* preset = preset_collection->find_preset(preset_name, false, true);
-                if (preset) {
-                    // Use helper function to save preset to bundle directory
-                    if (!save_preset_to_bundle_dir(*preset, preset_collection, remote_metadata.id, type_subdir, bundle_dir.string())) {
-                        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to save preset " << preset_name << " to bundle directory";
-                        continue;
-                    }
+            // Find the preset that was just loaded
+            Preset* preset = preset_collection->find_preset(preset_name, false, true);
+            if (preset) {
+                // Use helper function to save preset to bundle directory
+                if (!save_preset_to_bundle_dir(*preset, preset_collection, remote_metadata.id, type_subdir, bundle_dir.string())) {
+                    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to save preset " << preset_name << " to bundle directory";
+                    continue;
                 }
             }
         }
@@ -2172,6 +2401,7 @@ void PresetBundle::update_system_maps()
     this->sla_prints   .update_map_alias_to_profile_name();
     this->filaments    .update_map_alias_to_profile_name();
     this->sla_materials.update_map_alias_to_profile_name();
+    this->printers     .update_map_alias_to_profile_name();
 
     this->filaments.update_library_profile_excluded_from();
 }
@@ -2196,13 +2426,13 @@ void PresetBundle::load_installed_printers(const AppConfig &config)
 
 const std::string& PresetBundle::get_preset_name_by_alias( const Preset::Type& preset_type, const std::string& alias) const
 {
-    // there are not aliases for Printers profiles
-    if (preset_type == Preset::TYPE_PRINTER || preset_type == Preset::TYPE_INVALID)
+    if (preset_type == Preset::TYPE_INVALID)
         return alias;
 
     const PresetCollection& presets = preset_type == Preset::TYPE_PRINT     ? prints :
                                       preset_type == Preset::TYPE_SLA_PRINT ? sla_prints :
                                       preset_type == Preset::TYPE_FILAMENT  ? filaments :
+                                      preset_type == Preset::TYPE_PRINTER   ? printers :
                                       sla_materials;
 
     return presets.get_preset_name_by_alias(alias);
