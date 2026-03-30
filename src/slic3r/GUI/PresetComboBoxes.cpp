@@ -1289,7 +1289,7 @@ void PlaterPresetComboBox::update()
             (std::map<wxString, wxBitmap *> const &presets, wxString const &selected, std::string const &group, wxString const &groupName) {
         if (!presets.empty()) {
             set_label_marker(Append(_L(group), wxNullBitmap, DD_ITEM_STYLE_SPLIT_ITEM));
-            if (m_type == Preset::TYPE_FILAMENT) {
+            if (m_type == Preset::TYPE_FILAMENT || m_type == Preset::TYPE_PRINTER) {
                 std::vector<std::map<wxString, wxBitmap *>::value_type const*> list(presets.size(), nullptr);
                 std::transform(presets.begin(), presets.end(), list.begin(), [](auto & pair) { return &pair; });
                 bool groupByGroup = group != "System presets";
@@ -1297,7 +1297,7 @@ void PlaterPresetComboBox::update()
                 //    if (GetCount() == 1) Clear();
                 //    else SetString(GetCount() - 1, "");
                 //}
-                if (group == "System presets" || group == "Unsupported presets")
+                if (m_type == Preset::TYPE_FILAMENT && (group == "System presets" || group == "Unsupported presets"))
                     std::sort(list.begin(), list.end(), [&filament_orders, &preset_filament_vendors, &first_vendors, &preset_filament_types, &first_types](auto *l, auto *r) {
                         { // Compare order
                             auto iter1 = std::find(filament_orders.begin(), filament_orders.end(), l->first);
@@ -1334,7 +1334,7 @@ void PlaterPresetComboBox::update()
                         auto [l_valid, l_lower] = get_key(l);
                         auto [r_valid, r_lower] = get_key(r);
                         return (l_valid != r_valid) ? l_valid > r_valid
-                             : (l_lower != r_lower) ? l_lower < r_lower 
+                             : (l_lower != r_lower) ? l_lower < r_lower
                              : l->first < r->first;
                     });
                 }
@@ -1376,23 +1376,9 @@ void PlaterPresetComboBox::update()
                                    : group_filament_presets  == "3" ? "by_vendor"          // Create sub menus with filament vendor
                                    : "";                                                   // Use without sub menu
     add_presets(nonsys_presets, selected_user_preset, L("User presets"), group_filament_presets_by);
-
-    // ORCA: alternative to displaying sub-dropdowns, which are failing to render
-    if (m_type == Preset::TYPE_FILAMENT)
-        add_presets(bundle_presets, selected_bundle_preset, L("Bundle presets"), "by_bundle");
-    else {
-        // Split the bundle presets into separate maps
-        std::map<wxString, std::map<wxString, wxBitmap*>> presets_by_bundle;
-        for (auto pair : bundle_presets) {
-            wxString bundle_name = preset_bundle_names[pair.first];
-            if (presets_by_bundle.find(bundle_name) == presets_by_bundle.end())
-                presets_by_bundle.emplace(bundle_name, std::map<wxString, wxBitmap*>());
-            presets_by_bundle[bundle_name].insert(pair);
-        }
-        // Now add all the presets
-        for (auto pair : presets_by_bundle)
-            add_presets(pair.second, selected_bundle_preset, pair.first.ToStdString(), "");
-    }
+    // ORCA: add bundle presets with sub-dropdown grouping for filament and printer
+    auto bundle_group_name = (m_type == Preset::TYPE_FILAMENT || m_type == Preset::TYPE_PRINTER) ? "by_bundle" : "";
+    add_presets(bundle_presets, selected_bundle_preset, L("Bundle presets"), bundle_group_name);
     // BBS: move system to the end
     add_presets(system_presets, selected_system_preset, L("System presets"), _L("System"));
     add_presets(uncompatible_presets, {}, L("Unsupported presets"), _L("Unsupported") + " ");
@@ -1743,41 +1729,23 @@ void TabPresetComboBox::update()
             validate_selection(it->first == selected);
         }
     }
-    // ORCA: add bundle presets
+    // ORCA: add bundle presets with sub-dropdown grouping
     if (!bundle_presets.empty())
     {
-        // set_label_marker(Append(_L("Bundle presets"), wxNullBitmap, DD_ITEM_STYLE_SPLIT_ITEM));
-        // for (std::map<wxString, std::pair<wxBitmap*, bool>>::iterator it = bundle_presets.begin(); it != bundle_presets.end(); ++it) {
-        //     int item_id = Append(preset_aliases[it->first], *it->second.first);
-        //     SetItemTooltip(item_id, preset_descriptions[it->first]);
-        //     bool is_enabled = it->second.second;
-        //     if (!is_enabled)
-        //         set_label_marker(item_id, LABEL_ITEM_DISABLED);
-        //     validate_selection(it->first == selected);
-        // }
-        
-        // ORCA: alternative to displaying sub-dropdowns, which are failing to render
-        // Split the bundle presets into separate maps
-        std::map<wxString, std::map<wxString, std::pair<wxBitmap*, bool>>> presets_by_bundle;
-        for (auto pair : bundle_presets) {
-            wxString bundle_name = preset_bundle_names[pair.first];
-            if (presets_by_bundle.find(bundle_name) == presets_by_bundle.end())
-                presets_by_bundle.emplace(bundle_name, std::map<wxString, std::pair<wxBitmap*, bool>>());
-            presets_by_bundle[bundle_name].insert(pair);
-        }
-        // Now add all the presets
-        for (auto pair : presets_by_bundle) {
-            auto bundle_name = pair.first;
-            auto bundle_data = pair.second;
-            set_label_marker(Append(_L(bundle_name), wxNullBitmap, DD_ITEM_STYLE_SPLIT_ITEM));
-            for (std::map<wxString, std::pair<wxBitmap*, bool>>::iterator it = bundle_data.begin(); it != bundle_data.end(); ++it) {
-                int item_id = Append(preset_aliases[it->first], *it->second.first);
-                SetItemTooltip(item_id, preset_descriptions[it->first]);
-                bool is_enabled = it->second.second;
-                if (!is_enabled)
-                    set_label_marker(item_id, LABEL_ITEM_DISABLED);
-                validate_selection(it->first == selected);
+        set_label_marker(Append(_L("Bundle presets"), wxNullBitmap, DD_ITEM_STYLE_SPLIT_ITEM));
+        for (std::map<wxString, std::pair<wxBitmap*, bool>>::iterator it = bundle_presets.begin(); it != bundle_presets.end(); ++it) {
+            // Get bundle name for grouping
+            wxString bundle_name = _L("Unspecified");
+            if (preset_bundle_names.count(it->first) > 0 && !preset_bundle_names[it->first].empty()) {
+                bundle_name = preset_bundle_names[it->first];
             }
+            // Use Append with group parameter for sub-dropdown grouping
+            int item_id = Append(preset_aliases[it->first], *it->second.first, bundle_name);
+            SetItemTooltip(item_id, preset_descriptions[it->first]);
+            bool is_enabled = it->second.second;
+            if (!is_enabled)
+                set_label_marker(item_id, LABEL_ITEM_DISABLED);
+            validate_selection(it->first == selected);
         }
     }
     //BBS: move system to the end
