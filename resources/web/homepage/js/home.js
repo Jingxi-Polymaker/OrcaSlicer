@@ -77,11 +77,7 @@ function Set_RecentFile_MouseRightBtn_Event()
 
 function SetLoginPanelVisibility(visible) {
   var leftBoard = document.getElementById("LeftBoard");
-  if (visible) {
-    leftBoard.style.display = "block";
-  } else {
-    leftBoard.style.display = "none";
-  }
+  leftBoard.style.display = "block";
 }
 
 function HandleStudio( pVal )

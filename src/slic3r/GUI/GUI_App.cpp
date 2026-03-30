@@ -4505,11 +4505,7 @@ void GUI_App::get_login_info()
                 GUI::wxGetApp().run_script(strJS);
             }
         }
-        if(app_config->get_bool("installed_networking")) {
-            mainframe->m_webview->SetLoginPanelVisibility(true);
-        } else {
-            mainframe->m_webview->SetLoginPanelVisibility(false);
-        }
+        mainframe->m_webview->SetLoginPanelVisibility(true);
     }
 }
 
