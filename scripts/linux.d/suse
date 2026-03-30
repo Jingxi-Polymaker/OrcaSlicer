@@ -4,7 +4,7 @@ REQUIRED_DEV_PACKAGES=(
     autoconf
     automake
     cmake
-    dbus-devel
+    dbus-1-devel
     eglexternalplatform-devel
     extra-cmake-modules
     file
@@ -12,8 +12,7 @@ REQUIRED_DEV_PACKAGES=(
     gcc-c++
     gettext
     git
-    gstreamer1-devel
-    gstreamermm-devel
+    gstreamer-devel
     gtk3-devel
     libmspack-devel
     libquadmath-devel
@@ -21,13 +20,13 @@ REQUIRED_DEV_PACKAGES=(
     libspnav-devel
     libtool
     m4
-    mesa-libGLU-devel
+    glu-devel
     ninja-build
     openssl-devel
-    perl-FindBin
+    perl-FindBin-Real
     texinfo
     wayland-protocols-devel
-    webkit2gtk4.1-devel
+    webkit2gtk4-devel
     wget
     libcurl-devel
 )
@@ -40,7 +39,7 @@ then
     done
 
     if [[ "${#NEEDED_PKGS[*]}" -gt 0 ]]; then
-        sudo dnf install -y "${NEEDED_PKGS[@]}"
+        sudo zypper install -y "${NEEDED_PKGS[@]}"
     fi
     echo -e "done\n"
     exit 0
