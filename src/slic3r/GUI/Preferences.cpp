@@ -1533,6 +1533,45 @@ void PreferencesDialog::create_items()
     });
     g_sizer->Add(item_network_test);
 
+    //// ONLINE > Cloud Providers
+    g_sizer->Add(create_item_title(_L("Cloud Providers")), 1, wxEXPAND);
+
+    {
+        auto sizer = new wxBoxSizer(wxHORIZONTAL);
+        sizer->AddSpacer(FromDIP(DESIGN_LEFT_MARGIN));
+
+        auto text = new wxStaticText(m_parent, wxID_ANY, _L("Enable Bambu Cloud"),
+            wxDefaultPosition, DESIGN_TITLE_SIZE, wxST_NO_AUTORESIZE);
+        text->SetForegroundColour(DESIGN_GRAY900_COLOR);
+        text->SetFont(::Label::Body_14);
+        text->SetToolTip(_L("Allow logging into Bambu Cloud alongside Orca Cloud. When enabled, a Bambu login section appears on the homepage."));
+        text->Wrap(DESIGN_TITLE_SIZE.x);
+
+        auto cb = new ::CheckBox(m_parent);
+        cb->SetValue(app_config->has_cloud_provider("bambu"));
+        cb->SetToolTip(text->GetToolTipText());
+
+        cb->Bind(wxEVT_TOGGLEBUTTON, [this, cb](wxCommandEvent &e) {
+            e.Skip(); // let CheckBox::update() refresh the bitmap
+            if (cb->GetValue()) {
+                app_config->add_cloud_provider("bambu");
+            } else {
+                app_config->remove_cloud_provider("bambu");
+            }
+            app_config->save();
+
+            // Update homepage visibility immediately
+            auto *mainframe = wxGetApp().mainframe;
+            if (mainframe && mainframe->m_webview)
+                mainframe->m_webview->SendCloudProvidersInfo();
+        });
+
+        sizer->Add(text, 0, wxALIGN_CENTER | wxTOP | wxBOTTOM, FromDIP(3));
+        sizer->Add(cb, 0, wxALIGN_CENTER | wxRIGHT | wxLEFT, FromDIP(5));
+
+        g_sizer->Add(sizer);
+    }
+
     //// ONLINE > Update & sync
     g_sizer->Add(create_item_title(_L("Update & sync")), 1, wxEXPAND);
 

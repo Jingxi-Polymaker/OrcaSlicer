@@ -105,6 +105,8 @@ function HandleStudio( pVal )
   } else if (strCmd == "cloud_providers_info") {
     if (pVal["data"]["providers"] && pVal["data"]["providers"].indexOf("bambu") >= 0) {
       $("#BambuCloudSection").show();
+    } else {
+      $("#BambuCloudSection").hide();
     }
   } else if (strCmd == "network_plugin_installtip") {
     let nShow = pVal["show"] * 1;
