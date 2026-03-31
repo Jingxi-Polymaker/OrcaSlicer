@@ -3,3 +3,8 @@ in this task, we will make following changes:
 1. the current login button will always login into OrcaCloud
 2. add collapsible second in the proper place to allow user login into Bambu cloud
 3. user should be able be able to login into both cloud and keep the login status at the same time
+
+
+Note: 
+1. use_orca_cloud can be removed as the main cloud servicer will always be Orca Cloud
+2. the BambuCloudSection in the frontend will be hidden if installed_networking is false
