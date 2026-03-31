@@ -321,12 +321,14 @@ void AppConfig::set_defaults()
     if (get("allow_abnormal_storage").empty()) {
         set_bool("allow_abnormal_storage", false);
     }
+    
 #ifdef __linux__
     if (get(SETTING_USE_ENCRYPTED_TOKEN_FILE).empty())
         set_bool(SETTING_USE_ENCRYPTED_TOKEN_FILE, true);
 #else
+    // TODO: for convienence, use encrytped file for dev.  Enable it by default when release to public.
     if (get(SETTING_USE_ENCRYPTED_TOKEN_FILE).empty())
-        set_bool(SETTING_USE_ENCRYPTED_TOKEN_FILE, false);
+        set_bool(SETTING_USE_ENCRYPTED_TOKEN_FILE, true);
 #endif
 
     if(get("check_stable_update_only").empty()) {
