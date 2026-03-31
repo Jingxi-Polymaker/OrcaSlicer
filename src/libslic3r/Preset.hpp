@@ -253,7 +253,7 @@ public:
     // Configuration data, loaded from a file, or set from the defaults.
     DynamicPrintConfig  config;
 
-    // Alias of the preset
+    // Alias of the preset; ORCA: also used for bundled presets to act as a display, currently still expected to be unique to lookup the name from alias
     std::string         alias;
     // List of profile names, from which this profile was renamed at some point of time.
     // This list is then used to match profiles by their names when loaded from .gcode, .3mf, .amf,

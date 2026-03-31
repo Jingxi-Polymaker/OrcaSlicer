@@ -947,6 +947,7 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
                 preset.is_from_bundle = true;
                 // Prepend prefix to the preset's internal name
                 preset.name = prefix + preset.name;
+                preset.alias = prefix + preset.alias;
                 metadata.print_presets.push_back(preset.name);
             });
             this->filaments.load_presets(bundle_dir, PRESET_FILAMENT_NAME, substitutions, substitution_rule, [&](Preset& preset) {
@@ -954,6 +955,7 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
                 preset.is_from_bundle = true;
                 // Prepend prefix to the preset's internal name
                 preset.name = prefix + preset.name;
+                preset.alias = prefix + preset.alias;
                 metadata.filament_presets.push_back(preset.name);
             });
             this->printers.load_presets(bundle_dir, PRESET_PRINTER_NAME, substitutions, substitution_rule, [&](Preset& preset) {
@@ -961,6 +963,7 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
                 preset.is_from_bundle = true;
                 // Prepend prefix to the preset's internal name
                 preset.name = prefix + preset.name;
+                preset.alias = prefix + preset.alias;
                 metadata.printer_presets.push_back(preset.name);
             });
             metadata.bundle_type = BundleType::Local;
@@ -1012,6 +1015,7 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
                 preset.is_from_bundle = true;
                 // Prepend prefix to the preset's internal name
                 preset.name = prefix + preset.name;
+                preset.alias = prefix + preset.alias;
                 metadata.print_presets.push_back(preset.name);
             });
             this->filaments.load_presets(bundle_dir, PRESET_FILAMENT_NAME, substitutions, substitution_rule, [&](Preset& preset) {
@@ -1019,6 +1023,7 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
                 preset.is_from_bundle = true;
                 // Prepend prefix to the preset's internal name
                 preset.name = prefix + preset.name;
+                preset.alias = prefix + preset.alias;
                 metadata.filament_presets.push_back(preset.name);
             });
             this->printers.load_presets(bundle_dir, PRESET_PRINTER_NAME, substitutions, substitution_rule, [&](Preset& preset) {
@@ -1026,6 +1031,7 @@ PresetsConfigSubstitutions PresetBundle::load_user_presets(std::string user, For
                 preset.is_from_bundle = true;
                 // Prepend prefix to the preset's internal name
                 preset.name = prefix + preset.name;
+                preset.alias = prefix + preset.alias;
                 metadata.printer_presets.push_back(preset.name);
             });
 
@@ -1687,6 +1693,8 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
         return substitutions;
     }
 
+    std::string prefix = fs::relative(bundle_dir, user_folder).string() + "/";
+
     // Load each preset from the bundle and save to disk
     for (const auto& preset_entry : bundle_presets) {
         const std::string& preset_name = preset_entry.first;
@@ -1738,6 +1746,10 @@ PresetsConfigSubstitutions PresetBundle::update_subscribed_presets(
                     BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to save preset " << preset_name << " to bundle directory";
                     continue;
                 }
+
+                // Set name and alias
+                preset->name = prefix + preset->name;
+                preset->alias = prefix + preset->alias;
             }
         }
         catch (const std::runtime_error& err) {
