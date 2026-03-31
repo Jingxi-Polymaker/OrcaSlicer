@@ -237,7 +237,7 @@ namespace Slic3r {
 
                     const std::deque<Preset> &filament_presets = preset_bundle.filaments.get_presets();
                     for (const Preset &filament_preset : filament_presets) {
-                        if (filament_preset.is_system || filament_preset.is_default || filament_preset.is_project_embedded) continue;
+                        if (!filament_preset.is_user()) continue;
                         if (filament_preset.is_compatible) {
                             Preset *new_filament_preset = new Preset(filament_preset);
                             m_filament_presets[preset_name].push_back(new_filament_preset);
@@ -246,7 +246,7 @@ namespace Slic3r {
 
                     const std::deque<Preset> &process_presets = preset_bundle.prints.get_presets();
                     for (const Preset &process_preset : process_presets) {
-                        if (process_preset.is_system || process_preset.is_default || process_preset.is_project_embedded) continue;
+                        if (!process_preset.is_user()) continue;
                         if (process_preset.is_compatible) {
                             Preset *new_prpcess_preset = new Preset(process_preset);
                             m_process_presets[preset_name].push_back(new_prpcess_preset);
@@ -276,7 +276,7 @@ namespace Slic3r {
             }
             const std::deque<Preset> &filament_presets = preset_bundle.filaments.get_presets();
             for (const Preset &filament_preset : filament_presets) {
-                if (filament_preset.is_system || filament_preset.is_default) continue;
+                if (!filament_preset.can_overwrite()) continue;
                 Preset *new_filament_preset = new Preset(filament_preset);
                 const Preset *base_filament_preset = preset_bundle.filaments.get_preset_base(*new_filament_preset);
 

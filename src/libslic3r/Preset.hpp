@@ -235,6 +235,7 @@ public:
     bool                is_project_embedded = false;
     ConfigSubstitutions *loading_substitutions{nullptr};
     bool                is_user() const { return ! this->is_default && ! this->is_system && ! this->is_project_embedded && ! this->is_from_bundle; }
+    bool                can_overwrite() const { return ! this->is_default && ! this->is_system && ! this->is_from_bundle; }
     //bool                is_user() const { return ! this->is_default && ! this->is_system; }
 
     // Name of the preset, usually derived form the file name.

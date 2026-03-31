@@ -2454,7 +2454,7 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
         // Preset with the same name found.
         Preset &preset = *it;
         //BBS: add project embedded preset logic
-        if (preset.is_default || preset.is_system) {
+        if (!preset.can_overwrite()) {
         //if (preset.is_default || preset.is_external || preset.is_system)
             // Cannot overwrite the default preset.
             //BBS: add lock logic for sync preset in background
@@ -2513,6 +2513,11 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
         preset.is_default  = false;
         preset.is_system   = false;
         preset.is_external = false;
+
+        // Reset bundle data
+        preset.bundle_id.clear();
+        preset.is_from_bundle = false;
+
         preset.file        = this->path_for_preset(preset);
         // The newly saved preset will be activated -> make it visible.
         preset.is_visible  = true;
@@ -2555,7 +2560,7 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
 bool PresetCollection::delete_current_preset()
 {
     Preset &selected = this->get_selected_preset();
-    if (selected.is_default)
+    if (!selected.can_overwrite())
         return false;
 
     if (get_preset_base(selected) == &selected) {
@@ -2589,15 +2594,16 @@ bool PresetCollection::delete_current_preset()
 bool PresetCollection::delete_preset(const std::string& name)
 {
     auto it = this->find_preset_internal(name);
+    if (it == m_presets.end() || it->name != name)
+        return false;
 
     Preset& preset = *it;
-    if (preset.is_default)
+    // ORCA: if the preset can't be overridden then don't allow deletion
+    if (!preset.can_overwrite())
         return false;
-    //BBS: add project embedded preset logic and refine is_external
-    //if (!preset.is_external && !preset.is_system) {
-    if (! preset.is_system) {
-        preset.remove_files();
-    }
+
+    preset.remove_files();
+
     //BBS: add lock logic for sync preset in background
     lock();
     set_printer_hold_alias(it->alias, *it, true);
