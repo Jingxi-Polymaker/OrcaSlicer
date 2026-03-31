@@ -509,6 +509,27 @@ void WebViewPanel::ShowNetpluginTip()
     RunScript(strJS);
 }
 
+void WebViewPanel::SendCloudProvidersInfo()
+{
+    auto* app_config = wxGetApp().app_config;
+    if (!app_config)
+        return;
+
+    auto providers = app_config->get_cloud_providers();
+    json j;
+    j["command"] = "cloud_providers_info";
+    json data;
+    json provider_array = json::array();
+    for (const auto& p : providers) {
+        provider_array.push_back(p);
+    }
+    data["providers"] = provider_array;
+    j["data"] = data;
+
+    wxString strJS = wxString::Format("window.postMessage(%s)", j.dump());
+    RunScript(strJS);
+}
+
 void WebViewPanel::get_design_staffpick(int offset, int limit, std::function<void(std::string)> callback)
 {
     // auto host = wxGetApp().get_http_url(wxGetApp().app_config->get_country_code(), "v1/design-service/design/staffpick");
@@ -598,6 +619,7 @@ void WebViewPanel::OnNavigationComplete(wxWebViewEvent& evt)
         wxLogMessage("%s", "Navigation complete; url='" + evt.GetURL() + "'");
     UpdateState();
     ShowNetpluginTip();
+    SendCloudProvidersInfo();
 }
 
 /**

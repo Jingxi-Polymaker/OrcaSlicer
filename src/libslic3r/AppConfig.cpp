@@ -10,6 +10,7 @@
 #include "format.hpp"
 #include "nlohmann/json.hpp"
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 #include <stdexcept>
@@ -521,6 +522,21 @@ void AppConfig::set_defaults()
 
     if(get("installed_networking").empty()) {
         set_bool("installed_networking", false);
+    }
+
+    // Migrate use_orca_cloud -> cloud_providers
+    if (!get("use_orca_cloud").empty()) {
+        bool was_orca = get_bool("use_orca_cloud");
+        if (!was_orca) {
+            // Legacy Bambu-only user: give them both providers
+            set(SETTING_CLOUD_PROVIDERS, "orca;bambu");
+        }
+        erase("app", "use_orca_cloud");
+        m_dirty = true;
+    }
+    // Default for new installs
+    if (get(SETTING_CLOUD_PROVIDERS).empty()) {
+        set(SETTING_CLOUD_PROVIDERS, "orca");
     }
 
     // Remove legacy window positions/sizes
@@ -1565,6 +1581,62 @@ void AppConfig::set_remind_network_update_later(bool remind)
 void AppConfig::clear_remind_network_update_later()
 {
     set_bool(SETTING_NETWORK_PLUGIN_REMIND_LATER, false);
+}
+
+std::vector<std::string> AppConfig::get_cloud_providers() const
+{
+    std::vector<std::string> result;
+    std::string providers = get(SETTING_CLOUD_PROVIDERS);
+    if (providers.empty()) {
+        result.push_back("orca");
+        return result;
+    }
+
+    std::stringstream ss(providers);
+    std::string provider;
+    while (std::getline(ss, provider, ';')) {
+        if (!provider.empty())
+            result.push_back(provider);
+    }
+    // Ensure "orca" is always present
+    if (std::find(result.begin(), result.end(), "orca") == result.end()) {
+        result.insert(result.begin(), "orca");
+    }
+    return result;
+}
+
+void AppConfig::set_cloud_providers(const std::vector<std::string>& providers)
+{
+    std::string joined;
+    for (size_t i = 0; i < providers.size(); ++i) {
+        if (i > 0) joined += ";";
+        joined += providers[i];
+    }
+    set(SETTING_CLOUD_PROVIDERS, joined);
+}
+
+bool AppConfig::has_cloud_provider(const std::string& provider) const
+{
+    auto providers = get_cloud_providers();
+    return std::find(providers.begin(), providers.end(), provider) != providers.end();
+}
+
+void AppConfig::add_cloud_provider(const std::string& provider)
+{
+    auto providers = get_cloud_providers();
+    if (std::find(providers.begin(), providers.end(), provider) == providers.end()) {
+        providers.push_back(provider);
+        set_cloud_providers(providers);
+    }
+}
+
+void AppConfig::remove_cloud_provider(const std::string& provider)
+{
+    if (provider == "orca")
+        return; // Cannot remove orca
+    auto providers = get_cloud_providers();
+    providers.erase(std::remove(providers.begin(), providers.end(), provider), providers.end());
+    set_cloud_providers(providers);
 }
 
 void AppConfig::reset_selections()

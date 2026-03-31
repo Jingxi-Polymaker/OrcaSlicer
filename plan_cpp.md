@@ -1,153 +1,86 @@
-# C++ Backend Changes for Dual Cloud Login
+# C++ Backend: Multi-Cloud Provider Support
 
 ## Context
 
-The homepage frontend (plan.md) expects the C++ backend to handle Bambu-specific login commands independently from Orca commands. Currently, a single `m_agent` routes all login traffic to whichever cloud is configured via `use_orca_cloud`. We need a second, independent Bambu cloud agent for login/logout that does NOT trigger Orca-side effects (preset loading, device manager cleanup, sync).
+The homepage frontend already has fully-landed Orca and Bambu login sections — HTML (`index.html:43-67`), JS handlers (`home.js` `HandleStudio` for `studio_bambu_userlogin`/`studio_bambu_useroffline`), and send functions (`SendMsg_GetBambuLoginInfo`, `OnBambuLoginOrRegister`, `OnBambuLogOut`). The C++ backend does NOT yet handle any of these Bambu commands. This plan wires the backend to the existing frontend surface.
 
-## Prerequisite: Remove `use_orca_cloud` — Orca Is Always Primary
+Key changes:
+1. Removes `use_orca_cloud` with correct migration (preserving legacy Bambu users)
+2. Adds `cloud_providers` config (semicolon-delimited, default "orca", can include "bambu")
+3. Creates a sidecar `m_bambu_cloud_agent` for independent Bambu login/logout with NO Orca side effects
+4. Sends `cloud_providers_info` on page load; default-hides `#BambuCloudSection` in CSS
 
-The `use_orca_cloud` config flag is obsolete. The main cloud service is always OrcaCloud; Bambu Cloud becomes a secondary login managed via the new sidecar agent.
+**Ownership caveat**: `m_bambu_cloud_agent` (`shared_ptr<BBLCloudServiceAgent>`) is a **facade over shared plugin state** — every method delegates to `BBLNetworkPlugin::instance().get_agent()`. It does NOT own an independent backend instance. The `shared_ptr` controls only the wrapper lifetime, not the underlying DLL agent (owned by the `BBLNetworkPlugin` singleton, destroyed at process exit). This matters for lifecycle reasoning: `reset()` must happen before `unload_network_module()`.
 
-### NetworkAgentFactory.cpp (src/slic3r/Utils/NetworkAgentFactory.cpp:152-181)
+---
 
-- Remove the `use_orca_cloud` config read and provider branching
-- Always create `OrcaCloudServiceAgent` as the cloud agent:
+## Phase 0: AppConfig — `cloud_providers` Setting
+
+### `src/libslic3r/AppConfig.hpp`
+- Add `#define SETTING_CLOUD_PROVIDERS "cloud_providers"` near other `SETTING_*` defines
+- Add 5 methods: `get_cloud_providers()`, `set_cloud_providers()`, `has_cloud_provider()`, `add_cloud_provider()`, `remove_cloud_provider()`
+
+### `src/libslic3r/AppConfig.cpp`
+
+**Migration in `set_defaults()` (~line 102)** — must preserve legacy Bambu users:
 ```cpp
-std::unique_ptr<NetworkAgent> create_agent_from_config(const std::string& log_dir, AppConfig* app_config)
-{
-    if (!app_config)
-        return std::make_unique<NetworkAgent>(nullptr, nullptr);
-
-    // Primary cloud agent is always Orca
-    std::shared_ptr<ICloudServiceAgent> cloud_agent;
-    if (app_config->get_bool("installed_networking") || true) {  // always create
-        cloud_agent = NetworkAgentFactory::create_cloud_agent(CloudAgentProvider::Orca, log_dir);
+// Migrate use_orca_cloud -> cloud_providers
+if (!get("use_orca_cloud").empty()) {
+    bool was_orca = get_bool("use_orca_cloud");
+    if (!was_orca) {
+        // Legacy Bambu-only user: give them both providers
+        set(SETTING_CLOUD_PROVIDERS, "orca;bambu");
     }
-
-    auto agent = std::make_unique<NetworkAgent>(std::move(cloud_agent), nullptr);
-    if (agent) {
-        auto* orca_cloud = dynamic_cast<OrcaCloudServiceAgent*>(agent->get_cloud_agent().get());
-        if (orca_cloud) {
-            orca_cloud->configure_urls(app_config);
-        }
-    }
-    return agent;
+    erase("app", "use_orca_cloud");
+    m_dirty = true;
+}
+// Default for new installs
+if (get(SETTING_CLOUD_PROVIDERS).empty()) {
+    set(SETTING_CLOUD_PROVIDERS, "orca");
 }
 ```
 
-### GUI_App.cpp — Remove `use_orca_cloud` guard on BBL init (~line 3467-3468)
+When `use_orca_cloud=false` (or absent with `installed_networking=true`), the old code used BBL as the primary cloud agent. These users relied on Bambu Cloud login. Migrating them to `orca;bambu` ensures they keep Bambu access while gaining the new Orca-primary architecture.
 
-The BBL DLL init block currently checks `app_config->get_bool("use_orca_cloud")`. Since the flag is removed, change the condition to always init the BBL DLL when the networking plugin should be loaded:
-```cpp
-if (should_load_networking_plugin && !m_networking_need_update) {
-```
-
-### Sweep: Remove all `use_orca_cloud` references
-
-Only 3 source files reference `use_orca_cloud`:
-- `src/slic3r/Utils/NetworkAgentFactory.cpp` — lines 158, 162, 163, 173 (factory logic)
-- `src/slic3r/Utils/NetworkAgentFactory.hpp` — lines 167-168 (doc comment)
-- `src/slic3r/GUI/GUI_App.cpp` — line 3468 (BBL DLL init guard)
-
-| File | Changes |
-|------|---------|
-| `src/slic3r/Utils/NetworkAgentFactory.cpp` | Always create Orca cloud agent, remove `use_orca_cloud` branching |
-| `src/slic3r/Utils/NetworkAgentFactory.hpp` | Update doc comment |
-| `src/slic3r/GUI/GUI_App.cpp` | Remove `use_orca_cloud` guard on BBL DLL init |
-
-## Ownership Model
-
-`BBLCloudServiceAgent` is a stateless wrapper — every method delegates to `BBLNetworkPlugin::instance().get_agent()`. The real DLL agent is owned by `BBLNetworkPlugin` (created via `create_agent()`, destroyed via `destroy_agent()`). The `m_bambu_cloud_agent` shared_ptr we store is just a convenience accessor; it does not own or extend the lifetime of the underlying DLL agent.
-
-**Shutdown**: `NetworkAgent::unload_network_module()` calls `BBLNetworkPlugin::unload()` which frees the DLL library but does NOT destroy the agent handle. Actual agent destruction happens in `BBLNetworkPlugin::~BBLNetworkPlugin()` which calls `destroy_agent()` then `unload()`. Since `BBLNetworkPlugin` is a singleton destroyed at process exit, the DLL agent lifetime extends to program termination. Our `m_bambu_cloud_agent.reset()` only releases the wrapper — it must be called before the DLL is unloaded to avoid dangling delegation calls.
+**Implement 5 methods** (semicolon-delimited pattern, same as `get_skipped_network_versions()` at line 1504):
+- `get_cloud_providers()` always ensures "orca" is present
+- `remove_cloud_provider()` refuses to remove "orca"
 
 ---
 
-## Files to Modify
+## Phase 1: Remove `use_orca_cloud` References
 
-| File | Changes |
-|------|---------|
-| `src/slic3r/Utils/NetworkAgentFactory.cpp` | Always create Orca cloud agent, remove `use_orca_cloud` |
-| `src/slic3r/Utils/NetworkAgentFactory.hpp` | Update doc comment |
-| `src/slic3r/GUI/GUI_App.hpp` | Add `m_bambu_cloud_agent` member, new method declarations |
-| `src/slic3r/GUI/GUI_App.cpp` | Remove `use_orca_cloud` guard, store BBL agent at init, add 3 command handlers, implement 5 new methods |
-| `src/slic3r/GUI/WebUserLoginDialog.hpp` | Add agent-parameterized constructor, `m_cloud_agent` + `m_is_bambu_login` members |
-| `src/slic3r/GUI/WebUserLoginDialog.cpp` | Add second constructor, refactor ALL agent-dependent methods to use `m_cloud_agent` |
-| `src/slic3r/GUI/WebViewDialog.cpp` | Send `bambu_cloud_available` message on page load |
+### `src/slic3r/Utils/NetworkAgentFactory.cpp` (lines 152-181)
+- Replace `create_agent_from_config()` to always create `OrcaCloudServiceAgent`
+- Remove `use_orca_cloud` read (line 158), provider branching (lines 162-164), conditional `configure_urls` (line 173)
+- Always call `configure_urls(app_config)` on the Orca agent
 
----
+### `src/slic3r/Utils/NetworkAgentFactory.hpp` (lines 167-168)
+- Update doc comment to reflect Orca-always-primary
 
-## Step 0: Frontend Visibility of BambuCloudSection
-
-The `#BambuCloudSection` in the frontend must be hidden when `installed_networking` is false (no BBL DLL plugin). In that case `m_bambu_cloud_agent` is null and no Bambu commands work.
-
-**Approach**: Add a new C++ → JS message `bambu_cloud_available` sent during page init (from `WebViewPanel::OnNavigationComplete` or alongside `ShowNetpluginTip`):
-
-```cpp
-// In WebViewPanel, after page loads:
-json msg;
-msg["command"] = "bambu_cloud_available";
-msg["available"] = (wxGetApp().get_bambu_cloud_agent() != nullptr) ? 1 : 0;
-wxString strJS = wxString::Format("window.postMessage(%s)", msg.dump());
-RunScript(strJS);
-```
-
-**Frontend handler** (already covered in plan.md — add to `HandleStudio`):
-- When `available=0`: hide `#BambuCloudSection` entirely (`display:none`)
-- When `available=1`: show `#BambuCloudSection` (default collapsed state)
-
-This replaces the need for the frontend to guess from `network_plugin_installtip` — the backend explicitly tells the frontend whether Bambu Cloud login is available.
+### `src/slic3r/GUI/GUI_App.cpp` (lines 3467-3468)
+- Change `if (should_load_networking_plugin && !m_networking_need_update && app_config->get_bool("use_orca_cloud"))` to `if (should_load_networking_plugin && !m_networking_need_update)`
 
 ---
 
-## Step 1: Store Bambu Cloud Agent in GUI_App
+## Phase 2: Store Bambu Cloud Agent in GUI_App
 
-### GUI_App.hpp (~line 295, near `m_agent`)
+### `src/slic3r/GUI/GUI_App.hpp`
+- Add `#include "slic3r/Utils/BBLCloudServiceAgent.hpp"`
+- Add member: `std::shared_ptr<BBLCloudServiceAgent> m_bambu_cloud_agent;` (near `m_agent`, ~line 295)
+- Add 6 public methods: `get_bambu_cloud_agent()`, `get_bambu_login_info()`, `request_bambu_login()`, `request_bambu_logout()`, `handle_bambu_script_message()`, `ShowBambuUserLogin()`
 
-Add member:
-```cpp
-std::shared_ptr<BBLCloudServiceAgent> m_bambu_cloud_agent;
-```
-
-Add public methods (~line 353, near `getAgent()`):
-```cpp
-std::shared_ptr<BBLCloudServiceAgent> get_bambu_cloud_agent() { return m_bambu_cloud_agent; }
-void get_bambu_login_info();
-void request_bambu_login(bool show_user_info = false);
-void request_bambu_logout();
-void handle_bambu_script_message(std::string msg);
-void ShowBambuUserLogin(bool show = true);
-```
-
-Add include at top:
-```cpp
-#include "slic3r/Utils/BBLCloudServiceAgent.hpp"
-```
-
-### GUI_App.cpp (~line 3473-3479, existing BBL init block)
-
-Change the stack-local `BBLCloudServiceAgent bbl` to store in `m_bambu_cloud_agent`:
-
-```cpp
-if (plugin.has_agent()) {
-    m_bambu_cloud_agent = std::make_shared<BBLCloudServiceAgent>();
-    m_bambu_cloud_agent->set_config_dir(data_directory);
-    m_bambu_cloud_agent->init_log();
-    m_bambu_cloud_agent->set_cert_file(resources_dir() + "/cert", "slicer_base64.cer");
-    m_bambu_cloud_agent->set_country_code(app_config->get_country_code());
-    m_bambu_cloud_agent->start();
-}
-```
-
-Note: `m_bambu_cloud_agent` is a convenience accessor only. The underlying DLL agent lifetime is managed by `BBLNetworkPlugin::instance()` (destroyed in its destructor at process exit).
+### `src/slic3r/GUI/GUI_App.cpp` (lines 3473-3481, BBL init block)
+- Keep the existing BBL DLL init (needed for BBLPrinterAgent LAN operations regardless of cloud_providers config)
+- After init, conditionally create the facade: `if (app_config->has_cloud_provider("bambu")) m_bambu_cloud_agent = std::make_shared<BBLCloudServiceAgent>();`
+- Note: the DLL agent is already initialized by the preceding `bbl.set_config_dir()/init_log()/start()` calls via the singleton — the new `shared_ptr` is just a convenience wrapper
 
 ---
 
-## Step 2: Route New Commands in handle_web_request()
+## Phase 3: Route Bambu Commands in `handle_web_request()`
 
-### GUI_App.cpp (~line 4627, after `homepage_logout` handler)
-
-Add three new command handlers:
+### `src/slic3r/GUI/GUI_App.cpp` (after line 4627, after `homepage_logout` handler)
+Add 3 handlers matching the commands already sent by `home.js`:
 ```cpp
 else if (command_str.compare("get_bambu_login_info") == 0) {
     CallAfter([this] { get_bambu_login_info(); });
@@ -162,241 +95,179 @@ else if (command_str.compare("homepage_bambu_logout") == 0) {
 
 ---
 
-## Step 3: Implement Bambu Login Methods
+## Phase 4: Implement 5 Bambu Login Methods
 
-### get_bambu_login_info() — GUI_App.cpp (after get_login_info(), ~line 4510)
+### `src/slic3r/GUI/GUI_App.cpp`
 
-Sends `studio_bambu_userlogin` or `studio_bambu_useroffline` to WebView. Cannot reuse `build_login_cmd()`/`build_logout_cmd()` because those emit `studio_userlogin`/`studio_useroffline` which would conflict with Orca's commands.
+**`get_bambu_login_info()`** (after `get_login_info()`, ~line 4510):
+- If `m_bambu_cloud_agent->is_user_login()`: send `studio_bambu_userlogin` with name/avatar via `run_script()`
+- Else: send `studio_bambu_useroffline`
+- These command names match what `home.js:HandleStudio` already dispatches
 
-```cpp
-void GUI_App::get_bambu_login_info()
-{
-    if (!m_bambu_cloud_agent) return;
+**`request_bambu_login()`** (after `request_login()`, ~line 4481):
+- Guard on `m_bambu_cloud_agent != nullptr`
+- Call `ShowBambuUserLogin()`, then optionally `get_bambu_login_info()`
 
-    if (m_bambu_cloud_agent->is_user_login()) {
-        std::string name = m_bambu_cloud_agent->get_user_nickname();
-        if (name.empty()) name = m_bambu_cloud_agent->get_user_name();
-        std::string avatar = m_bambu_cloud_agent->get_user_avatar();
+**`request_bambu_logout()`** (after `request_user_logout()`, ~line 4568):
+- **Intentionally minimal** — calls only `m_bambu_cloud_agent->user_logout(true)` then `get_bambu_login_info()`
+- NO preset cleanup, NO device manager changes, NO sync stop (critical isolation)
 
-        json cmd;
-        cmd["command"] = "studio_bambu_userlogin";
-        cmd["data"]["name"] = name;
-        cmd["data"]["avatar"] = avatar;
+**`handle_bambu_script_message()`** (after `handle_script_message()`, ~line 4799):
+- Parses JSON, on `user_login` command: calls `m_bambu_cloud_agent->change_user()` then `get_bambu_login_info()`
+- Does NOT call `request_user_login()` (which triggers EVT_USER_LOGIN -> preset loading, device manager, sync)
 
-        wxString strJS = wxString::Format("window.postMessage(%s)", cmd.dump());
-        run_script(strJS);
-    } else {
-        json cmd;
-        cmd["command"] = "studio_bambu_useroffline";
-
-        wxString strJS = wxString::Format("window.postMessage(%s)", cmd.dump());
-        run_script(strJS);
-    }
-}
-```
-
-### request_bambu_login() — GUI_App.cpp (after request_login(), ~line 4481)
-
-```cpp
-void GUI_App::request_bambu_login(bool show_user_info)
-{
-    if (!m_bambu_cloud_agent) return;
-    ShowBambuUserLogin();
-    if (show_user_info) {
-        get_bambu_login_info();
-    }
-}
-```
-
-### request_bambu_logout() — GUI_App.cpp (after request_user_logout(), ~line 4568)
-
-**Intentionally minimal** — no preset cleanup, no device manager changes, no sync stop:
-
-```cpp
-void GUI_App::request_bambu_logout()
-{
-    if (m_bambu_cloud_agent && m_bambu_cloud_agent->is_user_login()) {
-        m_bambu_cloud_agent->user_logout(true);
-        get_bambu_login_info();  // sends studio_bambu_useroffline
-    }
-}
-```
-
-### handle_bambu_script_message() — GUI_App.cpp (after handle_script_message(), ~line 4799)
-
-Processes login completion from the Bambu login dialog. Does NOT call `request_user_login()` (which triggers preset loading, device manager, sync):
-
-```cpp
-void GUI_App::handle_bambu_script_message(std::string msg)
-{
-    try {
-        json j = json::parse(msg);
-        if (j.contains("command")) {
-            wxString cmd = j["command"];
-            if (cmd == "user_login") {
-                if (m_bambu_cloud_agent) {
-                    m_bambu_cloud_agent->change_user(j.dump());
-                    if (m_bambu_cloud_agent->is_user_login()) {
-                        get_bambu_login_info();  // sends studio_bambu_userlogin
-                    }
-                }
-            }
-        }
-    } catch (...) { ; }
-}
-```
-
-### ShowBambuUserLogin() — GUI_App.cpp (after ShowUserLogin(), ~line 4255)
-
-```cpp
-void GUI_App::ShowBambuUserLogin(bool show)
-{
-    if (!m_bambu_cloud_agent) return;
-    if (show) {
-        try {
-            ZUserLogin dlg(m_bambu_cloud_agent);
-            dlg.ShowModal();
-        } catch (std::exception&) { ; }
-    }
-}
-```
+**`ShowBambuUserLogin()`** (after `ShowUserLogin()`, ~line 4255):
+- Creates `ZUserLogin dlg(m_bambu_cloud_agent)` (agent-parameterized constructor) and shows modal
 
 ---
 
-## Step 4: Add Agent-Parameterized Constructor to ZUserLogin
+## Phase 5: Refactor ZUserLogin for Agent Injection
 
-### WebUserLoginDialog.hpp
+### `src/slic3r/GUI/WebUserLoginDialog.hpp`
+- Add `#include "slic3r/Utils/ICloudServiceAgent.hpp"`
+- Add constructor: `explicit ZUserLogin(std::shared_ptr<ICloudServiceAgent> cloud_agent)`
+- Add members: `std::shared_ptr<ICloudServiceAgent> m_cloud_agent`, `bool m_is_bambu_login{false}`
 
-Add to class declaration:
-```cpp
-class ZUserLogin : public wxDialog
-{
-public:
-    ZUserLogin();
-    explicit ZUserLogin(std::shared_ptr<ICloudServiceAgent> cloud_agent);  // NEW
-    virtual ~ZUserLogin();
-    // ... existing ...
-private:
-    // ... existing ...
-    std::shared_ptr<ICloudServiceAgent> m_cloud_agent;  // NEW
-    bool m_is_bambu_login{false};                        // NEW
-};
-```
+### `src/slic3r/GUI/WebUserLoginDialog.cpp`
 
-Add include:
-```cpp
-#include "slic3r/Utils/ICloudServiceAgent.hpp"
-```
+**Default constructor** (line 43):
+- At line 48, after getting `agent`, add: `if (agent) m_cloud_agent = agent->get_cloud_agent();`
+- At line 82, change `agent->get_cloud_login_url(...)` to `m_cloud_agent->get_cloud_login_url(...)`
 
-### WebUserLoginDialog.cpp
+**New constructor** `ZUserLogin(shared_ptr<ICloudServiceAgent>)`:
+- Sets `m_cloud_agent` and `m_is_bambu_login = true`
+- Uses `m_cloud_agent->get_cloud_login_url()` for URL
+- Same webview setup as default constructor (from line 86 onward)
 
-**New constructor** — nearly identical to default but uses `m_cloud_agent` directly:
+**`OnDocumentLoaded()`** (line 219):
+- Change `agent->get_cloud_service_host()` to `m_cloud_agent->get_cloud_service_host()` so Bambu URL matches correctly
 
-```cpp
-ZUserLogin::ZUserLogin(std::shared_ptr<ICloudServiceAgent> cloud_agent)
-    : wxDialog((wxWindow*)(wxGetApp().mainframe), wxID_ANY, "OrcaSlicer")
-    , m_cloud_agent(cloud_agent)
-    , m_is_bambu_login(true)
-{
-    // Same setup as default constructor, but use m_cloud_agent->get_cloud_login_url()
-    // instead of agent->get_cloud_login_url()
-    // ... (see implementation details below)
+**`OnScriptMessage()`** (line 264):
+- Line 273: change `agent && strCmd == "get_login_cmd" && agent->get_cloud_agent()` to `m_cloud_agent && strCmd == "get_login_cmd"`
+- Line 276: change `agent->build_login_cmd()` to `m_cloud_agent->build_login_cmd()`
+- Lines 322-333: branch `user_login` handler on `m_is_bambu_login`:
+  - If bambu: `wxGetApp().handle_bambu_script_message(msg)` (no Orca side effects)
+  - If orca: `wxGetApp().handle_script_message(msg)` (existing flow)
+
+---
+
+## Phase 6: Frontend Visibility — Config-Driven, First-Load Hide
+
+The `#BambuCloudSection` is currently **visible by default** (`home.css:119` has no `display: none`). Without an explicit hide, users with `cloud_providers=orca` will see a non-functional Bambu section. This phase is mandatory.
+
+**Product decision**: visibility is solely determined by whether "bambu" is in `cloud_providers`. If "bambu" is configured but the BBL plugin is missing, the section is still shown — the existing `#NoPluginTip` element (`index.html:65-67`) and `network_plugin_installtip` handler already guide the user to install the plugin.
+
+### `resources/web/homepage/css/home.css` (line 119)
+Add `display: none` to `#BambuCloudSection`:
+```css
+#BambuCloudSection {
+    display: none;  /* shown by cloud_providers_info from backend */
+    border-top: 1px solid;
+    width: 262px;
 }
 ```
 
-**Refactor default constructor** to also set `m_cloud_agent`:
-- At line 48: after `NetworkAgent* agent = wxGetApp().getAgent();`, add:
-  ```cpp
-  if (agent) m_cloud_agent = agent->get_cloud_agent();
+### `src/slic3r/GUI/WebViewDialog.hpp`
+- Add declaration: `void SendCloudProvidersInfo();`
+
+### `src/slic3r/GUI/WebViewDialog.cpp`
+- Implement `SendCloudProvidersInfo()`: reads `app_config->get_cloud_providers()`, sends provider list to JS — **no runtime plugin check**, purely config-driven:
+  ```json
+  {"command": "cloud_providers_info", "providers": ["orca", "bambu"]}
   ```
-- At line 82: change `agent->get_cloud_login_url(strlang.ToStdString())` to `m_cloud_agent->get_cloud_login_url(strlang.ToStdString())`
+- Call `SendCloudProvidersInfo()` from `OnNavigationComplete()` (line 600, after `ShowNetpluginTip()`)
 
-**Refactor OnDocumentLoaded** (~line 219):
-
-Currently uses `wxGetApp().getAgent()->get_cloud_service_host()` which returns the Orca host. When the dialog is opened for Bambu login, the loaded URL is a Bambu URL, so the host check fails and `m_networkOk` stays false, potentially triggering the error-page timer.
-
-Change:
-```cpp
-NetworkAgent* agent = wxGetApp().getAgent();
-std::string strHost = agent->get_cloud_service_host();
-```
-to:
-```cpp
-std::string strHost;
-if (m_cloud_agent) {
-    strHost = m_cloud_agent->get_cloud_service_host();
-} else {
-    NetworkAgent* agent = wxGetApp().getAgent();
-    if (agent) strHost = agent->get_cloud_service_host();
-}
-```
-
-**Modify OnScriptMessage** (~line 264):
-
-At line 273, change:
-```cpp
-NetworkAgent* agent = wxGetApp().getAgent();
-if (agent && strCmd == "get_login_cmd" && agent->get_cloud_agent()) {
-    std::string login_cmd = agent->build_login_cmd();
-```
-to:
-```cpp
-if (m_cloud_agent && strCmd == "get_login_cmd") {
-    std::string login_cmd = m_cloud_agent->build_login_cmd();
-```
-
-At line 322-333, change `user_login` handler to branch:
-```cpp
-if (strCmd == "user_login") {
-    j["data"]["autotest_token"] = m_AutotestToken;
-    std::string message_json = j.dump();
-    bool is_bambu = m_is_bambu_login;
-    EndModal(wxID_OK);
-    wxTheApp->CallAfter([message_json, is_bambu]() {
-        if (is_bambu) {
-            wxGetApp().handle_bambu_script_message(message_json);
-        } else {
-            wxGetApp().handle_script_message(message_json);
-        }
-    });
-}
-```
+### `resources/web/homepage/js/home.js`
+- Add `cloud_providers_info` handler in `HandleStudio()`:
+  - If "bambu" is in the providers array: `$("#BambuCloudSection").show()`
+  - Otherwise: keep hidden (default CSS)
+- The existing `network_plugin_installtip` handler continues to work independently — it shows `#NoPluginTip` and hides `#BambuLogin1` when the plugin is missing, regardless of `cloud_providers`
 
 ---
 
-## Step 5: Cleanup on Shutdown
+## Phase 7: Shutdown Cleanup
 
-In GUI_App.cpp, wherever `m_agent` is cleaned up (OnExit or destructor), add:
+### `src/slic3r/GUI/GUI_App.cpp`
+
+**OnExit** (before `delete m_agent` at line 2618):
 ```cpp
 m_bambu_cloud_agent.reset();
 ```
 
-This releases the stateless `BBLCloudServiceAgent` wrapper only. The underlying DLL agent is owned by `BBLNetworkPlugin` and destroyed in `~BBLNetworkPlugin()` at process exit. Important: `m_bambu_cloud_agent` must be reset **before** `NetworkAgent::unload_network_module()` is called, since `unload()` frees the DLL library — any calls through the wrapper after that would crash.
+**`hot_reload_network_plugin()`** (before `delete m_agent` at line 1792):
+```cpp
+m_bambu_cloud_agent.reset();
+```
+After reload succeeds (~line 1808), recreate if configured:
+```cpp
+if (app_config->has_cloud_provider("bambu")) {
+    auto& plugin = BBLNetworkPlugin::instance();
+    if (plugin.is_loaded() && plugin.has_agent())
+        m_bambu_cloud_agent = std::make_shared<BBLCloudServiceAgent>();
+}
+```
+
+Critical: `m_bambu_cloud_agent` must be reset BEFORE `NetworkAgent::unload_network_module()` since the wrapper delegates to DLL function pointers that become dangling after unload.
 
 ---
 
-## Thread Safety Notes
+## Side-Effect Isolation
 
-- `m_bambu_cloud_agent` is set once during init, read on UI thread via `CallAfter` — no mutex needed
-- BBL DLL singleton handles its own thread safety for login/logout
-- All `run_script()` calls happen on main thread (wxWidgets requirement)
-- Login dialog is modal on main thread, same as Orca login
+| Action | Presets | DeviceManager | Sync | Orca Agent | Bambu Agent |
+|--------|---------|---------------|------|------------|-------------|
+| Orca login | Load | Init | Start | `change_user` | No effect |
+| Orca logout | Clean | Clean | Stop | `user_logout` | No effect |
+| Bambu login | No effect | No effect | No effect | No effect | `change_user` |
+| Bambu logout | No effect | No effect | No effect | No effect | `user_logout` |
 
-## What Does NOT Change
+Note: BBL DLL callbacks (`set_on_user_login_fn`, `set_on_server_connected_fn`) are registered globally on the singleton plugin agent. The Bambu sidecar does NOT register its own callbacks — it uses synchronous polling (`is_user_login()`, `get_user_name()`) rather than relying on callback-driven state changes. This avoids interference with any callbacks the Orca-side `BBLPrinterAgent` may have registered.
 
-- `m_agent` always wraps `OrcaCloudServiceAgent` (enforced by factory change in Prerequisite)
-- `on_user_login` / `on_user_login_handle` — NOT triggered by Bambu login
-- Preset loading/unloading — Orca-only
-- Device manager — Orca-only
-- Sync thread — Orca-only
+---
+
+## Files Changed
+
+| File | Changes |
+|------|---------|
+| `src/libslic3r/AppConfig.hpp` | Add `SETTING_CLOUD_PROVIDERS`, 5 new methods |
+| `src/libslic3r/AppConfig.cpp` | Migration (preserve legacy Bambu users), default, 5 methods |
+| `src/slic3r/Utils/NetworkAgentFactory.cpp` | Always create Orca, remove `use_orca_cloud` |
+| `src/slic3r/Utils/NetworkAgentFactory.hpp` | Update doc comment |
+| `src/slic3r/GUI/GUI_App.hpp` | Add `m_bambu_cloud_agent`, 6 methods |
+| `src/slic3r/GUI/GUI_App.cpp` | Remove guard, store BBL agent, 3 handlers, 5 methods, shutdown |
+| `src/slic3r/GUI/WebUserLoginDialog.hpp` | Agent constructor, 2 new members |
+| `src/slic3r/GUI/WebUserLoginDialog.cpp` | New constructor, refactor 3 methods |
+| `src/slic3r/GUI/WebViewDialog.hpp` | Add `SendCloudProvidersInfo()` |
+| `src/slic3r/GUI/WebViewDialog.cpp` | Implement + call from `OnNavigationComplete()` |
+| `resources/web/homepage/css/home.css` | Add `display: none` to `#BambuCloudSection` |
+| `resources/web/homepage/js/home.js` | Add `cloud_providers_info` handler |
+
+---
 
 ## Verification
 
-1. **Build**: `cmake --build build --config RelWithDebInfo --target all`
-2. **Orca login**: Existing flow unchanged — `homepage_login_or_register` → Orca dialog → presets load
-3. **Bambu login**: `homepage_bambu_login_or_register` → Bambu dialog → `studio_bambu_userlogin` sent to JS, no preset side effects
-4. **Bambu logout**: `homepage_bambu_logout` → `studio_bambu_useroffline` sent to JS, no preset/sync cleanup
-5. **Independence**: Orca logout does not affect Bambu session and vice versa
-6. **Init**: Both `get_login_info` and `get_bambu_login_info` return correct status on page load
-7. **Plugin missing**: `m_bambu_cloud_agent` is null when BBL plugin unavailable — all Bambu handlers gracefully no-op
-8. **Bambu login dialog host check**: `OnDocumentLoaded()` uses `m_cloud_agent->get_cloud_service_host()` so it correctly matches the Bambu URL
+### Build
+1. `cmake --build build --config RelWithDebInfo --target all` — clean compile
+
+### Functional
+2. **Orca login**: existing flow unchanged — presets load, device manager inits, sync starts
+3. **Bambu login** (config=`orca;bambu`): Bambu dialog opens, `studio_bambu_userlogin` sent, NO preset/sync side effects
+4. **Bambu logout**: `studio_bambu_useroffline` sent, NO cleanup
+5. **Independence**: Orca logout doesn't affect Bambu; Bambu logout doesn't affect Orca
+6. **Host check**: `ZUserLogin::OnDocumentLoaded()` uses `m_cloud_agent->get_cloud_service_host()` so Bambu URL matches
+
+### Visibility
+7. **Page load**: `cloud_providers_info` correctly shows/hides `#BambuCloudSection`
+8. **Config "orca" only**: `BambuCloudSection` stays hidden (CSS default + no backend show signal)
+9. **Config "orca;bambu"**: `BambuCloudSection` visible regardless of plugin state
+10. **Config "orca;bambu" + plugin missing**: section visible, `#NoPluginTip` shown inside it, login button hidden (existing `network_plugin_installtip` handler)
+
+### Migration
+11. **Legacy `use_orca_cloud=false`**: after upgrade, config reads `cloud_providers=orca;bambu`, Bambu section visible, user can still log into Bambu
+12. **Legacy `use_orca_cloud=true`**: after upgrade, config reads `cloud_providers=orca` (default), `use_orca_cloud` key erased
+13. **Fresh install**: config reads `cloud_providers=orca`, no legacy key present
+
+### Persistence & Lifecycle
+14. **Dual login across page reload**: both `get_login_info` and `get_bambu_login_info` return correct logged-in state after homepage navigation
+15. **Dual login across app restart**: BBL DLL persists Bambu session, OrcaCloudServiceAgent persists Orca session via token storage — both should restore on next launch
+16. **Shutdown**: `m_bambu_cloud_agent.reset()` before `unload_network_module()` — no dangling DLL calls
+17. **Hot reload** (`hot_reload_network_plugin()`): sidecar reset before unload, recreated after reload if configured

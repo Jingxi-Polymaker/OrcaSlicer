@@ -118,6 +118,7 @@ body
 /* --- Bambu Cloud Section --- */
 #BambuCloudSection
 {
+	display: none;  /* shown by cloud_providers_info from backend */
 	border-top: 1px solid;
 	width: 262px;
 }

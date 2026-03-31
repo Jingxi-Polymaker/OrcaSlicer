@@ -102,6 +102,10 @@ function HandleStudio( pVal )
     let strName = pVal["data"]["menu"];
 
     GotoMenu(strName);
+  } else if (strCmd == "cloud_providers_info") {
+    if (pVal["data"]["providers"] && pVal["data"]["providers"].indexOf("bambu") >= 0) {
+      $("#BambuCloudSection").show();
+    }
   } else if (strCmd == "network_plugin_installtip") {
     let nShow = pVal["show"] * 1;
 

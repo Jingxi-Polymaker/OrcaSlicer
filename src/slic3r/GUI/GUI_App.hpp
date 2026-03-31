@@ -11,6 +11,7 @@
 #include "slic3r/GUI/DeviceManager.hpp"
 #include "slic3r/GUI/UserNotification.hpp"
 #include "slic3r/Utils/NetworkAgent.hpp"
+#include "slic3r/Utils/BBLCloudServiceAgent.hpp"
 #include "slic3r/GUI/WebViewDialog.hpp"
 #include "slic3r/GUI/WebUserLoginDialog.hpp"
 #include "slic3r/GUI/BindDialog.hpp"
@@ -293,6 +294,7 @@ private:
     Slic3r::UserManager* m_user_manager { nullptr };
     Slic3r::TaskManager* m_task_manager { nullptr };
     NetworkAgent* m_agent { nullptr };
+    std::shared_ptr<BBLCloudServiceAgent> m_bambu_cloud_agent;
     std::map<std::string, std::string> need_delete_presets;   // store setting ids of preset
     std::vector<bool> m_create_preset_blocked { false, false, false, false, false, false }; // excceed limit
     bool m_networking_compatible { false };
@@ -487,6 +489,13 @@ public:
     void            request_project_download(std::string project_id);
     void            request_open_project(std::string project_id);
     void            request_remove_project(std::string project_id);
+
+    std::shared_ptr<BBLCloudServiceAgent> get_bambu_cloud_agent() { return m_bambu_cloud_agent; }
+    void            get_bambu_login_info();
+    void            request_bambu_login(bool show_user_info = false);
+    void            request_bambu_logout();
+    void            handle_bambu_script_message(std::string msg);
+    void            ShowBambuUserLogin();
 
     void            handle_http_error(unsigned int status, std::string body);
     void            on_http_error(wxCommandEvent &evt);

@@ -163,9 +163,8 @@ private:
  * Creates a NetworkAgent with cloud agent only. The printer agent is created
  * separately when a printer is selected, via create_printer_agent_by_id().
  *
- * Cloud provider selection:
- *   - use_orca_cloud=true  → OrcaCloudServiceAgent (default)
- *   - use_orca_cloud=false → BBLCloudServiceAgent (requires plugin)
+ * Cloud provider: Always creates OrcaCloudServiceAgent as the primary provider.
+ * Bambu cloud is handled separately via m_bambu_cloud_agent in GUI_App.
  *
  * @param log_dir Directory for log files
  * @param app_config Application configuration object

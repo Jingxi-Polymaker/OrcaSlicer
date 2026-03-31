@@ -1789,6 +1789,7 @@ bool GUI_App::hot_reload_network_plugin()
 
         // Phase 6: Destroy agent
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": Phase 6 - destroying agent";
+        m_bambu_cloud_agent.reset();
         delete m_agent;
         m_agent = nullptr;
     }
@@ -1817,6 +1818,12 @@ bool GUI_App::hot_reload_network_plugin()
         m_agent->connect_server();
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": re-subscribing to cloud printers";
         m_device_manager->add_user_subscribe();
+    }
+
+    if (app_config->has_cloud_provider("bambu")) {
+        auto& plugin = BBLNetworkPlugin::instance();
+        if (plugin.is_loaded() && plugin.has_agent())
+            m_bambu_cloud_agent = std::make_shared<BBLCloudServiceAgent>();
     }
 
     if (mainframe && mainframe->m_monitor) {
@@ -2609,6 +2616,8 @@ int GUI_App::OnExit()
     // This disconnects all cached agents and releases their shared_ptrs,
     // ensuring clean thread shutdown before the agent is deleted.
     NetworkAgentFactory::clear_printer_agent_cache();
+
+    m_bambu_cloud_agent.reset();
 
     if (m_agent) {
         // BBS avoid a crash on mac platform
@@ -3464,8 +3473,7 @@ bool GUI_App::on_init_network(bool try_backup)
     // When using Orca cloud alongside the BBL network plugin, the BBL DLL agent still
     // needs to be created and configured (config dir, certs, country, start) so that
     // BBLPrinterAgent can use it for LAN discovery and printer communication.
-    if (should_load_networking_plugin && !m_networking_need_update &&
-        app_config->get_bool("use_orca_cloud")) {
+    if (should_load_networking_plugin && !m_networking_need_update) {
         auto& plugin = BBLNetworkPlugin::instance();
         if (plugin.is_loaded() && !plugin.has_agent()) {
             plugin.create_agent(data_directory);
@@ -3478,6 +3486,13 @@ bool GUI_App::on_init_network(bool try_backup)
             bbl.set_country_code(app_config->get_country_code());
             bbl.start();
         }
+    }
+
+    // Create Bambu cloud agent facade if configured
+    if (app_config->has_cloud_provider("bambu")) {
+        auto& plugin = BBLNetworkPlugin::instance();
+        if (plugin.is_loaded() && plugin.has_agent())
+            m_bambu_cloud_agent = std::make_shared<BBLCloudServiceAgent>();
     }
 
     if (!should_load_networking_plugin) {
@@ -4625,6 +4640,15 @@ std::string GUI_App::handle_web_request(std::string cmd)
                     wxGetApp().request_user_logout();
                 });
             }
+            else if (command_str.compare("get_bambu_login_info") == 0) {
+                CallAfter([this] { get_bambu_login_info(); });
+            }
+            else if (command_str.compare("homepage_bambu_login_or_register") == 0) {
+                CallAfter([this] { request_bambu_login(true); });
+            }
+            else if (command_str.compare("homepage_bambu_logout") == 0) {
+                CallAfter([this] { request_bambu_logout(); });
+            }
             else if (command_str.compare("homepage_modeldepot") == 0) {
                 CallAfter([this] {
                     wxGetApp().open_mall_page_dialog();
@@ -4789,6 +4813,72 @@ void GUI_App::handle_script_message(std::string msg)
                     if (m_agent->is_user_login()) {
                         request_user_login(1);
                     }
+                }
+            }
+        }
+    }
+    catch (...) {
+        ;
+    }
+}
+
+void GUI_App::ShowBambuUserLogin()
+{
+    try {
+        ZUserLogin dlg;
+        dlg.ShowModal();
+    } catch (std::exception&) {
+        ;
+    }
+}
+
+void GUI_App::get_bambu_login_info()
+{
+    if (!m_bambu_cloud_agent)
+        return;
+
+    if (m_bambu_cloud_agent->is_user_login()) {
+        std::string login_cmd = m_bambu_cloud_agent->build_login_cmd();
+        wxString strJS = wxString::Format("window.postMessage(%s)", login_cmd);
+        GUI::wxGetApp().run_script(strJS);
+    } else {
+        std::string logout_cmd = m_bambu_cloud_agent->build_logout_cmd();
+        wxString strJS = wxString::Format("window.postMessage(%s)", logout_cmd);
+        GUI::wxGetApp().run_script(strJS);
+    }
+}
+
+void GUI_App::request_bambu_login(bool show_user_info)
+{
+    if (!m_bambu_cloud_agent)
+        return;
+
+    ShowBambuUserLogin();
+
+    if (show_user_info) {
+        get_bambu_login_info();
+    }
+}
+
+void GUI_App::request_bambu_logout()
+{
+    if (!m_bambu_cloud_agent)
+        return;
+
+    m_bambu_cloud_agent->user_logout(true);
+    get_bambu_login_info();
+}
+
+void GUI_App::handle_bambu_script_message(std::string msg)
+{
+    try {
+        json j = json::parse(msg);
+        if (j.contains("command")) {
+            wxString cmd = j["command"];
+            if (cmd == "user_login") {
+                if (m_bambu_cloud_agent) {
+                    m_bambu_cloud_agent->change_user(j.dump());
+                    get_bambu_login_info();
                 }
             }
         }
