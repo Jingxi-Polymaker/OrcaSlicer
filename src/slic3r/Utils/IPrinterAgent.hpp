@@ -4,6 +4,7 @@
 #include "bambu_networking.hpp"
 #include <string>
 #include <memory>
+#include <vector>
 
 namespace Slic3r {
 
@@ -34,6 +35,26 @@ enum class FilamentSyncMode {
     none = 0,     ///< Filament synchronization not supported
     subscription, ///< Real-time push updates via subscription (e.g., MQTT)
     pull          ///< On-demand fetch via REST API (blocking call)
+};
+
+/**
+ * AccessoryFilamentSlot - Resolved filament info for one slot reported by an
+ * external "AMS accessory" (e.g. a standalone RFID reader that decodes a spool's
+ * tag and exposes it over a standard protocol such as Moonraker).
+ *
+ * This is a protocol-neutral struct so it can cross the IPrinterAgent boundary
+ * without exposing any agent's internal tray representation. The accessory
+ * resolves the tag itself; OrcaSlicer merges these slots into the printer's
+ * existing AMS by slot index (see AmsAccessoryManager).
+ */
+struct AccessoryFilamentSlot {
+    int         slot_index   = 0;     ///< 0-based global lane/slot index
+    bool        has_filament = false; ///< Whether a spool is present in this slot
+    std::string type;                 ///< Material type, e.g. "PLA", "PETG"
+    std::string color;                ///< Hex color, no '#', "RRGGBB" or "RRGGBBAA"
+    std::string filament_id;          ///< Resolved Orca/Bambu filament id (optional)
+    int         bed_temp     = 0;     ///< Optional, 0 = unknown
+    int         nozzle_temp  = 0;     ///< Optional, 0 = unknown
 };
 
 /**
@@ -275,6 +296,21 @@ public:
      * Populates the MachineObject's DevFilaSystem with fetched filament data.
      */
     virtual bool fetch_filament_info(std::string dev_id) { return false; }
+
+    /**
+     * Fetch resolved per-slot filament info from a standalone "AMS accessory"
+     * endpoint (e.g. an external RFID reader), WITHOUT writing into any
+     * MachineObject. Unlike fetch_filament_info(), this never mutates device
+     * state — the caller decides how to merge the slots (see AmsAccessoryManager).
+     *
+     * @param host    Accessory host: IP, hostname, or full URL.
+     * @param api_key Optional API key (empty if none).
+     * @param use_ssl Use https when host has no explicit scheme.
+     * @param out     Filled with the accessory's reported slots on success.
+     * @return true if the accessory was reachable and reported filament data.
+     */
+    virtual bool fetch_accessory_filaments(const std::string& host, const std::string& api_key, bool use_ssl,
+                                           std::vector<AccessoryFilamentSlot>& out) { return false; }
 };
 
 } // namespace Slic3r

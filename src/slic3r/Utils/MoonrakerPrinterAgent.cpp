@@ -596,6 +596,52 @@ bool MoonrakerPrinterAgent::fetch_filament_info(std::string dev_id)
     return false;
 }
 
+bool MoonrakerPrinterAgent::fetch_accessory_filaments(const std::string& host, const std::string& api_key, bool use_ssl,
+                                                      std::vector<AccessoryFilamentSlot>& out)
+{
+    if (host.empty()) {
+        BOOST_LOG_TRIVIAL(warning) << "MoonrakerPrinterAgent::fetch_accessory_filaments: empty host";
+        return false;
+    }
+
+    std::lock_guard<std::recursive_mutex> lock(state_mutex);
+
+    // Point this (dedicated, unconnected) agent instance at the accessory host.
+    // Only base_url + api_key are needed by the low-level fetch helpers.
+    std::string base_url = host;
+    if (!boost::istarts_with(base_url, "http://") && !boost::istarts_with(base_url, "https://"))
+        base_url = (use_ssl ? "https://" : "http://") + base_url;
+    boost::trim_right_if(base_url, boost::is_any_of("/"));
+
+    device_info.base_url = base_url;
+    device_info.api_key  = api_key;
+    device_info.use_ssl  = use_ssl;
+
+    std::vector<AmsTrayData> trays;
+    int max_lane_index = 0;
+    if (!fetch_moonraker_filament_data(trays, max_lane_index) &&
+        !fetch_hh_filament_info(trays, max_lane_index)) {
+        BOOST_LOG_TRIVIAL(info) << "MoonrakerPrinterAgent::fetch_accessory_filaments: no filament data from " << base_url;
+        return false;
+    }
+
+    out.reserve(trays.size());
+    for (const auto& t : trays) {
+        AccessoryFilamentSlot s;
+        s.slot_index   = t.slot_index;
+        s.has_filament = t.has_filament;
+        s.type         = t.tray_type;
+        s.color        = normalize_color_value(t.tray_color);
+        s.filament_id  = t.tray_info_idx;
+        s.bed_temp     = t.bed_temp;
+        s.nozzle_temp  = t.nozzle_temp;
+        out.push_back(std::move(s));
+    }
+    BOOST_LOG_TRIVIAL(info) << "MoonrakerPrinterAgent::fetch_accessory_filaments: " << out.size()
+                            << " slots from " << base_url;
+    return true;
+}
+
 std::string MoonrakerPrinterAgent::trim_and_upper(const std::string& input)
 {
     std::string result = input;

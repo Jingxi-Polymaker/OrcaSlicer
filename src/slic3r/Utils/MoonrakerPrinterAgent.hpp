@@ -72,6 +72,12 @@ public:
     FilamentSyncMode get_filament_sync_mode() const override { return FilamentSyncMode::pull; }
     bool fetch_filament_info(std::string dev_id) override;
 
+    // AMS accessory: fetch resolved per-slot filament info from an arbitrary
+    // Moonraker host without touching any MachineObject (used to merge an
+    // external RFID reader into another printer's AMS).
+    bool fetch_accessory_filaments(const std::string& host, const std::string& api_key, bool use_ssl,
+                                   std::vector<AccessoryFilamentSlot>& out) override;
+
 protected:
     struct MoonrakerDeviceInfo
     {

@@ -112,6 +112,7 @@
 #include "ModelMall.hpp"
 #include "ConfigWizard.hpp"
 #include "SyncAmsInfoDialog.hpp"
+#include "AmsAccessory.hpp"
 #include "../Utils/ASCIIFolding.hpp"
 #include "../Utils/UndoRedo.hpp"
 #include "../Utils/PresetUpdater.hpp"
@@ -544,6 +545,7 @@ struct Sidebar::priv
     ScalableButton* m_printer_connect = nullptr;
     ScalableButton* m_printer_bbl_sync = nullptr;
     ScalableButton* m_printer_setting = nullptr;
+    ScalableButton* m_printer_accessory = nullptr;
     wxStaticText *  m_text_printer_settings = nullptr;
     wxPanel* m_panel_printer_content = nullptr;
 
@@ -1676,6 +1678,15 @@ Sidebar::Sidebar(Plater *parent)
             wxGetApp().run_wizard(ConfigWizard::RR_USER, ConfigWizard::SP_PRINTERS);
             });
 
+        // ORCA configure an external AMS accessory (e.g. RFID reader) for the selected device
+        p->m_printer_accessory = new ScalableButton(p->m_panel_printer_title, wxID_ANY, "param_accessory");
+        p->m_printer_accessory->SetToolTip(_L("Configure AMS accessory (filament reader)"));
+        p->m_printer_accessory->Bind(wxEVT_BUTTON, [this](wxCommandEvent &e) {
+            auto obj = wxGetApp().getDeviceManager() ? wxGetApp().getDeviceManager()->get_selected_machine() : nullptr;
+            AmsAccessoryDialog dlg(this, obj);
+            dlg.ShowModal();
+        });
+
         wxBoxSizer* h_sizer_title = new wxBoxSizer(wxHORIZONTAL);
         h_sizer_title->Add(p->m_printer_icon, 0, wxALIGN_CENTRE | wxLEFT, FromDIP(SidebarProps::TitlebarMargin()));
         h_sizer_title->AddSpacer(FromDIP(SidebarProps::ElementSpacing()));
@@ -1683,6 +1694,7 @@ Sidebar::Sidebar(Plater *parent)
         h_sizer_title->AddStretchSpacer();
         h_sizer_title->Add(p->m_printer_connect , 0, wxALIGN_CENTER | wxRIGHT, FromDIP(SidebarProps::WideSpacing())); // used larger margin to prevent accidental clicks
         h_sizer_title->Add(p->m_printer_bbl_sync, 0, wxALIGN_CENTER | wxRIGHT, FromDIP(SidebarProps::WideSpacing())); // used larger margin to prevent accidental clicks
+        h_sizer_title->Add(p->m_printer_accessory, 0, wxALIGN_CENTER | wxRIGHT, FromDIP(SidebarProps::WideSpacing()));
         h_sizer_title->Add(p->m_printer_setting, 0, wxALIGN_CENTER);
         h_sizer_title->AddSpacer(FromDIP(SidebarProps::TitlebarMargin()));
         h_sizer_title->SetMinSize(-1, 3 * em);
@@ -2851,6 +2863,7 @@ void Sidebar::msw_rescale()
     p->m_printer_connect->msw_rescale();
     p->m_printer_bbl_sync->msw_rescale();
     p->m_printer_icon->msw_rescale();
+    p->m_printer_accessory->msw_rescale();
     p->m_printer_setting->msw_rescale();
 
     p->panel_printer_preset->SetMinSize(FromDIP(PRINTER_PANEL_SIZE));
@@ -2963,7 +2976,7 @@ void Sidebar::sys_color_changed()
     // for (wxWindow* btn : std::vector<wxWindow*>{ p->btn_reslice, p->btn_export_gcode })
     //    wxGetApp().UpdateDarkUI(btn, true);
     p->m_printer_icon->msw_rescale();
-    p->m_printer_setting->msw_rescale();
+    p->m_printer_accessory->msw_rescale();
     p->m_printer_setting->msw_rescale();
     p->m_filament_icon->msw_rescale();
     p->m_bpButton_add_filament->msw_rescale();
@@ -3436,13 +3449,123 @@ void Sidebar::load_ams_list(MachineObject* obj)
     p->combo_printer->update();
 }
 
+// Build one filament_ams_list entry from an external accessory slot, matching the layout
+// produced by build_filament_ams_list() so the normal sync_ams_list() pipeline can apply it.
+static DynamicPrintConfig accessory_build_tray_config(const AccessoryFilamentSlot& s,
+                                                      const std::string& name, int ams_id, int slot_id)
+{
+    DynamicPrintConfig c;
+    const std::string hex = s.color.empty()
+        ? std::string()
+        : into_u8(wxColour("#" + s.color).GetAsString(wxC2S_HTML_SYNTAX));
+    c.set_key_value("filament_id", new ConfigOptionStrings{s.filament_id});
+    c.set_key_value("tag_uid", new ConfigOptionStrings{std::string()});
+    c.set_key_value("ams_id", new ConfigOptionStrings{std::to_string(ams_id)});
+    c.set_key_value("slot_id", new ConfigOptionStrings{std::to_string(slot_id)});
+    c.set_key_value("filament_type", new ConfigOptionStrings{s.type});
+    c.set_key_value("tray_name", new ConfigOptionStrings{name});
+    c.set_key_value("filament_colour", new ConfigOptionStrings{hex});
+    c.set_key_value("filament_multi_colour", new ConfigOptionStrings{});
+    c.set_key_value("filament_colour_type", new ConfigOptionStrings{std::string("0")});
+    c.set_key_value("filament_exist", new ConfigOptionBools{s.has_filament});
+    c.set_key_value("filament_slot_placeholder", new ConfigOptionBools{false});
+    std::optional<FilamentBaseInfo> info;
+    if (wxGetApp().preset_bundle)
+        info = wxGetApp().preset_bundle->get_filament_by_filament_id(s.filament_id);
+    c.set_key_value("filament_is_support", new ConfigOptionBools{info.has_value() ? info->is_support : false});
+    if (!hex.empty())
+        c.opt<ConfigOptionStrings>("filament_multi_colour")->values.push_back(hex);
+    return c;
+}
+
+// No connected printer: pull resolved filament from the accessory straight into the
+// slicer's filament list (there is no AMS to push to). Returns true if it handled the
+// click (configured accessory), false to fall back to the original silent no-op.
+bool Sidebar::sync_filaments_from_accessory_no_printer()
+{
+    auto cfg = AmsAccessoryManager::get().load(std::string());
+    if (!cfg.valid())
+        return false; // nothing configured — preserve original behavior
+
+    std::vector<AccessoryFilamentSlot> slots;
+    std::string err;
+    int got = AmsAccessoryManager::get().fetch(cfg, slots, &err);
+    if (got < 0) {
+        wxMessageBox(from_u8(err.empty() ? "AMS accessory connection failed." : err),
+                     _L("AMS Accessory"), wxOK | wxICON_ERROR, this);
+        return true;
+    }
+
+    std::map<int, DynamicPrintConfig> acc_list;
+    for (const auto& s : slots) {
+        if (!s.has_filament)
+            continue;
+        const int  ams_id    = s.slot_index / 4;
+        const int  slot_id   = s.slot_index % 4;
+        const std::string nm = std::string(1, char('A' + ams_id)) + char('1' + slot_id);
+        acc_list.emplace(ams_id * 4 + slot_id, accessory_build_tray_config(s, nm, ams_id, slot_id));
+    }
+    if (acc_list.empty()) {
+        wxMessageBox(_L("The accessory did not report any loaded filament."),
+                     _L("AMS Accessory"), wxOK | wxICON_WARNING, this);
+        return true;
+    }
+
+    wxGetApp().preset_bundle->filament_ams_list = acc_list;
+
+    // Direct sync (use_map=false): no per-slot mapping dialog, just apply by index.
+    std::vector<std::pair<DynamicPrintConfig*, std::string>> unknowns;
+    std::map<int, AMSMapInfo> no_maps;
+    MergeFilamentInfo merge_info;
+    const bool enable_append = wxGetApp().app_config->get_bool("enable_append_color_by_sync_ams");
+    unsigned int n = wxGetApp().preset_bundle->sync_ams_list(unknowns, /*use_map*/ false, no_maps,
+                                                             enable_append, merge_info, /*color_only*/ false);
+    if (n == 0) {
+        wxMessageBox(_L("There are no compatible filaments, and sync is not performed."),
+                     _L("AMS Accessory"), wxOK | wxICON_WARNING, this);
+        return true;
+    }
+
+    wxGetApp().plater()->on_filament_count_change(n);
+    wxGetApp().get_tab(Preset::TYPE_FILAMENT)->select_preset(wxGetApp().preset_bundle->filament_presets[0]);
+    wxGetApp().preset_bundle->export_selections(*wxGetApp().app_config);
+    update_dynamic_filament_list();
+    for (auto& c : p->combos_filament)
+        c->update();
+    update_filaments_area_height();
+    Layout();
+
+    wxMessageBox(wxString::Format(_L("Synced %u filament(s) from the accessory."), n),
+                 _L("AMS Accessory"), wxOK | wxICON_INFORMATION, this);
+    return true;
+}
+
 void Sidebar::sync_ams_list(bool is_from_big_sync_btn)
 {
     wxBusyCursor cursor;
     // Force load ams list
     auto obj = wxGetApp().getDeviceManager()->get_selected_machine();
-    if (!obj)
+    if (!obj) {
+        // No connected/selected printer. If an external accessory (e.g. RFID reader) is
+        // configured, sync its filament straight into the slicer list instead of silently
+        // doing nothing. Falls through to the original no-op when none is configured.
+        sync_filaments_from_accessory_no_printer();
         return;
+    }
+    // Merge any external AMS-accessory filament data into the printer's AMS before
+    // building the list. No-op unless an accessory is enabled for this device — but when
+    // one is configured, report failures instead of swallowing them.
+    if (AmsAccessoryManager::get().load(obj->get_dev_id()).valid()) {
+        std::string acc_err;
+        int acc = AmsAccessoryManager::get().sync(obj, &acc_err);
+        if (acc < 0) {
+            wxMessageBox(from_u8(acc_err.empty() ? "AMS accessory sync failed." : acc_err),
+                         _L("AMS Accessory"), wxOK | wxICON_ERROR, this);
+        } else if (acc == 0) {
+            wxMessageBox(from_u8(acc_err.empty() ? "AMS accessory synced nothing." : acc_err),
+                         _L("AMS Accessory"), wxOK | wxICON_WARNING, this);
+        }
+    }
     GUI::wxGetApp().sidebar().load_ams_list(obj);
 
     auto & list = wxGetApp().preset_bundle->filament_ams_list;
