@@ -633,6 +633,7 @@ bool MoonrakerPrinterAgent::fetch_accessory_filaments(const std::string& host, c
         s.type         = t.tray_type;
         s.color        = normalize_color_value(t.tray_color);
         s.filament_id  = t.tray_info_idx;
+        s.raw_filament_id = t.lane_filament_id;
         s.bed_temp     = t.bed_temp;
         s.nozzle_temp  = t.nozzle_temp;
         out.push_back(std::move(s));
@@ -851,9 +852,26 @@ bool MoonrakerPrinterAgent::fetch_moonraker_filament_data(std::vector<AmsTrayDat
         tray.nozzle_temp = safe_json_int(lane_obj, "nozzle_temp");
         tray.has_filament = !tray.tray_type.empty();
         auto* bundle = GUI::wxGetApp().preset_bundle;
-        tray.tray_info_idx = bundle
-            ? bundle->filaments.filament_id_by_type(tray.tray_type)
-            : map_filament_type_to_generic_id(tray.tray_type);
+        // Two-tier resolution (see SLICER_FORK_API.md): a lane may carry the exact
+        // preset filament_id decoded from the spool's tag. Trust it only when a
+        // visible, printer-compatible preset actually has that id; otherwise fall
+        // back to the stock material-type best match.
+        const std::string lane_fid = safe_json_string(lane_obj, "filament_id");
+        tray.lane_filament_id = lane_fid;
+        if (!lane_fid.empty() && bundle && bundle->filaments.has_compatible_filament_id(lane_fid)) {
+            tray.tray_info_idx = lane_fid;
+            BOOST_LOG_TRIVIAL(debug) << "MoonrakerPrinterAgent: lane " << lane_index
+                                     << " exact filament_id match: " << lane_fid;
+        } else {
+            tray.tray_info_idx = bundle
+                ? bundle->filaments.filament_id_by_type(tray.tray_type)
+                : map_filament_type_to_generic_id(tray.tray_type);
+            if (!lane_fid.empty())
+                BOOST_LOG_TRIVIAL(debug) << "MoonrakerPrinterAgent: lane " << lane_index
+                                         << " filament_id '" << lane_fid
+                                         << "' has no compatible preset, matched by type to "
+                                         << tray.tray_info_idx;
+        }
 
         max_lane_index = std::max(max_lane_index, lane_index);
         trays.push_back(tray);

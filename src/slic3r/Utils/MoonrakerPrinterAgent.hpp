@@ -100,6 +100,7 @@ protected:
         std::string tray_type;           // Material type (e.g., "PLA", "ASA")
         std::string tray_color;          // Raw color (#RRGGBB, 0xRRGGBB, or RRGGBBAA)
         std::string tray_info_idx;       // Setting ID (optional)
+        std::string lane_filament_id;    // filament_id exactly as reported by the lane (optional)
         int         bed_temp = 0;        // Optional
         int         nozzle_temp = 0;     // Optional
     };

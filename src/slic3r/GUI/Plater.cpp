@@ -3496,6 +3496,13 @@ bool Sidebar::sync_filaments_from_accessory_no_printer()
         return true;
     }
 
+    // Strict tag matching: abort instead of silently degrading an unmatched tag id
+    // to a generic material preset.
+    if (std::string unmatched = AmsAccessoryManager::unmatched_filament_error(slots); !unmatched.empty()) {
+        wxMessageBox(from_u8(unmatched), _L("AMS Accessory"), wxOK | wxICON_ERROR, this);
+        return true;
+    }
+
     std::map<int, DynamicPrintConfig> acc_list;
     for (const auto& s : slots) {
         if (!s.has_filament)

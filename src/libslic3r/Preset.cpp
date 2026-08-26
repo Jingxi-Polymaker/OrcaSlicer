@@ -3220,6 +3220,19 @@ std::string PresetCollection::filament_id_by_type(const std::string& filament_ty
     return preset(first_visible_idx_by_type(filament_type)).filament_id;
 }
 
+bool PresetCollection::has_compatible_filament_id(const std::string& filament_id) const
+{
+    if (filament_id.empty())
+        return false;
+    size_t start = m_default_suppressed ? m_num_default_presets : 0;
+    for (size_t i = start; i < m_presets.size(); ++i) {
+        const auto& p = m_presets[i];
+        if (p.is_visible && p.is_compatible && p.filament_id == filament_id)
+            return true;
+    }
+    return false;
+}
+
 std::vector<std::string> PresetCollection::diameters_of_selected_printer()
 {
     std::set<std::string> diameters;

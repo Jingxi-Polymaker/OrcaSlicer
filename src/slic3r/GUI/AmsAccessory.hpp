@@ -66,6 +66,11 @@ public:
     int fetch(const AmsAccessoryConfig& cfg, std::vector<AccessoryFilamentSlot>& out,
               std::string* err_out = nullptr);
 
+    // Strict tag matching: describe loaded slots whose reported filament_id has no
+    // compatible preset for the current printer. Returns an empty string when every
+    // slot is usable; otherwise a user-facing error (callers abort the sync with it).
+    static std::string unmatched_filament_error(const std::vector<AccessoryFilamentSlot>& slots);
+
 private:
     AmsAccessoryManager() = default;
 

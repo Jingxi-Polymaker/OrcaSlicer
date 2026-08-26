@@ -116,6 +116,24 @@ int AmsAccessoryManager::fetch(const AmsAccessoryConfig& cfg, std::vector<Access
     return n;
 }
 
+std::string AmsAccessoryManager::unmatched_filament_error(const std::vector<AccessoryFilamentSlot>& slots)
+{
+    std::string detail;
+    for (const auto& s : slots) {
+        // Only loaded slots whose tag carried a filament_id that failed exact matching.
+        // Slots without an id keep the silent material-type fallback by design.
+        if (!s.has_filament || s.raw_filament_id.empty() || s.raw_filament_id == s.filament_id)
+            continue;
+        const std::string slot_name = std::string(1, char('A' + s.slot_index / 4)) + char('1' + s.slot_index % 4);
+        detail += "\n- " + slot_name + ": " + s.raw_filament_id + " (" + s.type + ")";
+    }
+    if (detail.empty())
+        return detail;
+    return "The accessory reported filament tag id(s) with no matching filament preset for the "
+           "current printer:" + detail + "\nInstall the matching filament preset (or select a "
+           "printer that supports it), then sync again. Nothing was synced.";
+}
+
 int AmsAccessoryManager::test(const AmsAccessoryConfig& cfg, std::string* err_out)
 {
     std::vector<AccessoryFilamentSlot> slots;
@@ -162,6 +180,13 @@ int AmsAccessoryManager::sync(MachineObject* obj, std::string* err_out)
     if (!agent->fetch_accessory_filaments(cfg.host, cfg.api_key, cfg.use_ssl, slots)) {
         set_err("Could not read filament data from the accessory at " + cfg.host +
                 ".\nCheck the address, that the device is powered on, and reachable on the network.");
+        return -1;
+    }
+
+    // Strict tag matching: an id that doesn't resolve aborts the whole sync rather
+    // than silently degrading that spool to a generic material preset.
+    if (std::string unmatched = unmatched_filament_error(slots); !unmatched.empty()) {
+        set_err(unmatched);
         return -1;
     }
 

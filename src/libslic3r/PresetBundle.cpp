@@ -3546,6 +3546,22 @@ unsigned int PresetBundle::sync_ams_list(std::vector<std::pair<DynamicPrintConfi
     // Update ams_multi_color_filment
     update_filament_multi_color();
     update_multi_material_filament_presets();
+    // update_multi_material_filament_presets() may pad filament_presets up to the
+    // printer's extruder count (more nozzles than synced AMS slots). Keep the
+    // per-filament project vectors sized in lockstep, like set_num_filaments()
+    // does, or the sidebar combos index filament_colour out of bounds for the
+    // padded entries.
+    if (size_t num_filaments = this->filament_presets.size(); filament_color->values.size() < num_filaments) {
+        const std::string default_color = "#CECECE";
+        filament_color->values.resize(num_filaments, default_color);
+        filament_color_type->values.resize(num_filaments, "1");
+        if (auto *multi_color = project_config.option<ConfigOptionStrings>("filament_multi_colour");
+            multi_color && multi_color->values.size() < num_filaments)
+            multi_color->values.resize(num_filaments, default_color);
+        if (filament_map->values.size() < num_filaments)
+            filament_map->values.resize(num_filaments, 1);
+        ams_multi_color_filment.resize(num_filaments, {default_color});
+    }
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "finish sync ams list";
     return this->filament_presets.size();
 }

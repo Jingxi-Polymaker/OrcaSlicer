@@ -53,6 +53,9 @@ struct AccessoryFilamentSlot {
     std::string type;                 ///< Material type, e.g. "PLA", "PETG"
     std::string color;                ///< Hex color, no '#', "RRGGBB" or "RRGGBBAA"
     std::string filament_id;          ///< Resolved Orca/Bambu filament id (optional)
+    std::string raw_filament_id;      ///< filament_id exactly as the accessory reported it
+                                      ///< (empty if none). Differs from filament_id when no
+                                      ///< compatible preset carries the reported id.
     int         bed_temp     = 0;     ///< Optional, 0 = unknown
     int         nozzle_temp  = 0;     ///< Optional, 0 = unknown
 };
